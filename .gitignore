@@ -1,0 +1,11 @@
+node_modules/
+.venv/
+.env
+dist/
+coverage/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+backend/data/*
+!backend/data/.gitkeep
