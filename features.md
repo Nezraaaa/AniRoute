@@ -19,11 +19,11 @@ Source-of-truth boundaries:
 
 ## Delivery planning
 
-- The planner starts with empty crop and quantity fields plus a selectable vehicle. Pickup and delivery fields also start empty; the app does not invent default trip details or destinations.
-- Crop name, quantity, vehicle, pickup, and delivery fields have visible labels and inline validation. Crop and quantity are entered for each delivery instead of being limited to a fixed sample choice.
+- The planner starts with zero crop types and zero delivery points plus a selectable vehicle. Entering a crop count creates one crop-name and quantity row per crop; entering a delivery-point count creates one searchable location row per stop.
+- Crop rows, vehicle, pickup, and delivery fields have visible labels and inline validation. The current crop and destination summaries are derived from the repeatable rows before the route adapter is called.
 - Pickup and delivery search provides debounced location suggestions through the backend geocoding adapter, with local sample fallbacks for the demo.
 - Selecting a location stores its coordinates and places a draggable A/B pin on the map. Clearing a field also clears its map coordinate.
-- **Find routes** validates the trip and calls the typed route adapter. Demo mode uses deterministic local sample routes; Live mode calls the configured API and may use a labeled sample fallback when enabled.
+- **Find routes** validates the trip and calls the typed route adapter. Demo mode uses deterministic local sample routes only; Live mode calls the configured API only and shows an explicit error when the backend is unavailable or returns demo data.
 - **Edit trip** returns focus to the delivery details.
 
 ## Route comparison and map
@@ -46,7 +46,7 @@ Source-of-truth boundaries:
 - Camera states cover permission needed, active, denied, unavailable, and retry. Navigation remains usable when permissions are unavailable.
 - The camera preview reflows for desktop and mobile layouts. The surrounding app remains responsive instead of becoming a full-screen portrait layout.
 - Current GPS is displayed only when supplied by the browser. No location is guessed when GPS is unavailable.
-- The current computer-vision flow is frontend-only and hardcoded for demonstration. When the camera opens, a sample finding appears automatically; there is no simulate-detection button.
+- The current computer-vision flow is frontend-only and hardcoded for demonstration. In Demo mode, a sample finding appears automatically; in Live mode, no sample finding is created and the backend scanner status is shown.
 - Clicking a finding captures the current frame for the confirmation dialog while keeping the live camera component mounted. After **Not now** or a successful confirmation, the next sample detection is scheduled automatically so the camera does not freeze.
 
 ## Confirmation and upload flow
@@ -55,7 +55,7 @@ Source-of-truth boundaries:
 - The dialog provides **Not now** and **Confirm & upload**. It does not add another upload form or a second submit step.
 - For the current simulated finding, confirmation stays in the browser through the local demo service path and does not call the backend.
 - A future non-simulated finding can pass through the Live hazard-confirmation adapter with its type, timestamp, confidence, GPS, route/segment IDs, and captured frame.
-- Successful confirmation triggers the route recheck flow. The demo can recommend another route and lets the driver choose whether to switch.
+- Successful confirmation triggers the route recheck flow. Demo confirmation and recheck stay local; Live confirmation/recheck call the backend only and report unavailable integration instead of falling back.
 - Failed uploads keep the dialog open with a retry action.
 - The modal and camera status clearly identify simulated computer vision and the fact that live model inference is not connected.
 
@@ -73,7 +73,7 @@ Source-of-truth boundaries:
 - Typed adapters exist for `calculateRoutes`, `recalculateRoute`, `startHazardScanning`, `scanCameraFrame`, `confirmHazard`, and `stopHazardScanning`.
 - API base URL and endpoint paths are configurable through `.env.example`; no API key or secret is shipped in frontend code.
 - Demo route generation, simulated camera findings, simulated confirmation, and sample route rechecks are intentionally local.
-- Live route calculation and future non-simulated hazard confirmation have backend adapter paths, but production routing, model inference, risk data, and persistence are not complete.
+- Live location search, route calculation, scanner, hazard confirmation, and route recheck use backend adapter paths only. The current bundled API identifies route/hazard outputs as demo data, so Live surfaces an integration error until production services replace them.
 
 ## Brief requirement audit
 

@@ -30,6 +30,7 @@ let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
 
 const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e' }
+const hasDemoRoutes = computed(() => props.routes.some(route => route.source === 'demo' || route.source === 'local_demo'))
 
 function cartoRasterStyle(): StyleSpecification {
   return {
@@ -437,7 +438,7 @@ onBeforeUnmount(() => {
     <p class="map-attribution map-attribution-links">
       &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>
       &middot; &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-      &middot; Sample route lines; live road directions are not connected.
+      &middot; {{ hasDemoRoutes ? 'Sample route lines; live road directions are not connected.' : 'Live road directions are supplied by the backend.' }}
     </p>
   </section>
 </template>

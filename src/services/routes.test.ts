@@ -48,7 +48,7 @@ describe('route service adapter', () => {
       recommended: true, known_hazards: [],
     }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      routes: [route], data_source: 'demo', recommended_route_id: 'optimal', message: 'Sample data.',
+      routes: [route], data_source: 'api', recommended_route_id: 'optimal', message: 'Live data.',
     }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -57,24 +57,27 @@ describe('route service adapter', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(result.routes[0]).toMatchObject({ id: 'optimal', category: 'optimal', travelTimeMinutes: 52, cropRiskLabel: 'lower' })
     expect(result.recommendedRouteId).toBe('optimal')
-    expect(result.source).toBe('demo')
+    expect(result.source).toBe('api')
   })
 
-  it('uses clearly labelled deterministic demo routes when the API is offline', async () => {
+  it('shows a clear live integration error when the API is offline', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
 
-    const result = await calculateRoutes(demoTrip)
-
-    expect(result.source).toBe('demo')
-    expect(result.message).toMatch(/offline|sample/i)
-    expect(result.routes.map(route => route.category)).toEqual(['optimal', 'safer', 'fastest'])
-    expect(result.routes.find(route => route.recommended)?.id).toBe('optimal')
+    await expect(calculateRoutes(demoTrip)).rejects.toThrow('Live route backend is unavailable')
   })
 
   it('shows backend request errors instead of masking them as demo routes', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Trip could not be calculated.' }, false)))
 
     await expect(calculateRoutes(demoTrip)).rejects.toThrow('Trip could not be calculated.')
+  })
+
+  it('rejects demo-labelled route data while Live mode is active', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      routes: [], data_source: 'demo', recommended_route_id: 'optimal',
+    })))
+
+    await expect(calculateRoutes(demoTrip)).rejects.toThrow('Live route engine is not integrated yet')
   })
 
   it('uses the recalculation endpoint after a hazard confirmation', async () => {
@@ -87,7 +90,7 @@ describe('route service adapter', () => {
       recommended: true, known_hazards: [],
     }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      routes: [safer], data_source: 'demo', recommended_route_id: 'safer', changed: true,
+      routes: [safer], data_source: 'api', recommended_route_id: 'safer', changed: true,
     }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -115,15 +118,23 @@ describe('hazard service adapter', () => {
     })
   })
 
+  it('keeps demo camera frames local instead of requesting the scanner API', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await scanCameraFrame('optimal', 'data:image/jpeg;base64,/9j/AA==', null, 'demo')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('sends the geotag and evidence only when confirmation is called', async () => {
     const hazard: DetectedHazard = {
       id: 'sample-1', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
       coordinates: { latitude: 6.42, longitude: 124.89 }, routeId: 'optimal',
-      roadSegmentId: 'optimal-segment-2', distanceAheadKm: 0.4, simulated: true,
+      roadSegmentId: 'optimal-segment-2', distanceAheadKm: 0.4, simulated: false,
     }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       observation_id: 'saved-1', status: 'uploaded', message: 'Saved to demo API.',
-      data_source: 'demo', stored_at: '2026-09-20T12:31:00Z', evidence_stored: true,
+      data_source: 'api', stored_at: '2026-09-20T12:31:00Z', evidence_stored: true,
     }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -132,10 +143,10 @@ describe('hazard service adapter', () => {
     const payload = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
     expect(payload).toMatchObject({
       hazard_type: 'pothole', latitude: 6.42, longitude: 124.89,
-      route_id: 'optimal', road_segment_id: 'optimal-segment-2', simulated: true,
+      route_id: 'optimal', road_segment_id: 'optimal-segment-2', simulated: false,
     })
     expect(payload.evidence_frame_data_url).toBe('data:image/jpeg;base64,aGVsbG8=')
-    expect(result).toMatchObject({ id: 'saved-1', status: 'uploaded', source: 'demo', evidenceStored: true })
+    expect(result).toMatchObject({ id: 'saved-1', status: 'uploaded', source: 'api', evidenceStored: true })
   })
 
   it('keeps the demo computer-vision confirmation disconnected from the backend', async () => {
@@ -156,23 +167,21 @@ describe('hazard service adapter', () => {
     const hazard: DetectedHazard = {
       id: 'sample-2', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
       coordinates: { latitude: 6.42, longitude: 124.89 }, routeId: 'optimal',
-      roadSegmentId: 'optimal-segment-2', simulated: true,
+      roadSegmentId: 'optimal-segment-2', simulated: false,
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Evidence frame is too large.' }, false)))
 
     await expect(confirmHazard(hazard, 'data:image/jpeg;base64,aGVsbG8=')).rejects.toThrow('Evidence frame is too large.')
   })
 
-  it('saves a confirmed observation in the browser demo when the API is offline', async () => {
+  it('shows a clear live integration error instead of saving locally when the API is offline', async () => {
     const hazard: DetectedHazard = {
       id: 'sample-3', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
-      routeId: 'optimal', roadSegmentId: 'optimal-segment-2', simulated: true,
+      routeId: 'optimal', roadSegmentId: 'optimal-segment-2', simulated: false,
     }
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
 
-    const result = await confirmHazard(hazard)
-
-    expect(result).toMatchObject({ status: 'uploaded', source: 'local_demo' })
-    expect(JSON.parse(localStorage.getItem('aniroute-demo-road-updates') || '[]')).toHaveLength(1)
+    await expect(confirmHazard(hazard)).rejects.toThrow('Live hazard confirmation backend is unavailable')
+    expect(localStorage.getItem('aniroute-demo-road-updates')).toBeNull()
   })
 })

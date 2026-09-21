@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { ChevronDown, Package, Truck } from '@lucide/vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -10,13 +11,18 @@ import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import LocationSearch from '@/components/delivery/LocationSearch.vue'
 import { demoDestinations, demoOrigins } from '@/data/demo'
-import type { LocationSuggestion, TripInput } from '@/types/aniRoute'
+import type { AppMode, LocationSuggestion, TripInput } from '@/types/aniRoute'
 
-const { trip, errors, loading } = defineProps<{
+const props = withDefaults(defineProps<{
   trip: TripInput
   errors: Record<string, string>
   loading?: boolean
-}>()
+  mode?: AppMode
+}>(), { mode: 'demo' })
+const trip = props.trip
+const errors = computed(() => props.errors)
+const loading = computed(() => props.loading)
+const mode = computed(() => props.mode)
 const emit = defineEmits<{
   'find-routes': []
   'location-selected': [field: 'origin' | 'destination', index: number, location: LocationSuggestion]
@@ -152,6 +158,7 @@ function submitForm() {
             <LocationSearch
               id="origin"
               v-model="trip.origin"
+              :mode="mode"
               :local-suggestions="demoOrigins"
               placeholder="Enter farm or pickup point"
               :invalid="Boolean(errors.origin)"
@@ -177,6 +184,7 @@ function submitForm() {
                   <LocationSearch
                     :id="`destination-${index}`"
                     :model-value="point"
+                    :mode="mode"
                     :local-suggestions="demoDestinations"
                     icon="search"
                     placeholder="Search delivery point"

@@ -9,7 +9,7 @@ import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import { useAniRouteStore } from '@/composables/useAniRouteStore'
-import { checkBackend } from '@/services/api'
+import { makeDemoRoutes } from '@/data/demo'
 import { searchLocations } from '@/services/geocoding'
 import { calculateRoutes } from '@/services/routes'
 import type { Coordinates, LocationSuggestion, RouteOption } from '@/types/aniRoute'
@@ -44,22 +44,33 @@ async function loadRoutes(initial = false) {
     if (initial) store.state.fieldErrors = {}
     return
   }
+  const requestMode = store.state.mode
   if (!initial) store.state.loadingRoutes = true
   try {
     await Promise.all([
       resolveLocationCoordinates('origin'),
       resolveLocationCoordinates('destination'),
     ])
-    const result = await calculateRoutes({ ...store.trip }, store.state.mode)
+    if (store.state.mode !== requestMode) return
+    const result = await calculateRoutes({ ...store.trip }, requestMode)
+    if (store.state.mode !== requestMode) return
     store.replaceRoutes(result.routes)
     store.state.routeSource = result.source
     store.state.routeMessage = result.message || (result.source === 'demo'
       ? 'Sample route options · no live road or weather data.'
       : 'Route options received from AniRoute.')
     store.state.selectedRouteId = result.recommendedRouteId
-    store.state.apiConnected = store.state.mode === 'live' && await checkBackend()
+    store.state.apiConnected = requestMode === 'live' && result.source === 'api'
   } catch (error) {
+    if (store.state.mode !== requestMode) return
     generalError.value = error instanceof Error ? error.message : 'We could not find routes. Check the trip details and try again.'
+    store.state.apiConnected = false
+    if (store.state.mode === 'live') {
+      store.replaceRoutes([])
+      store.state.selectedRouteId = ''
+      store.state.routeSource = 'api'
+      store.state.routeMessage = generalError.value
+    }
   } finally {
     store.state.loadingRoutes = false
   }
@@ -93,6 +104,7 @@ function handleLocationCleared(field: 'origin' | 'destination', index: number) {
 }
 
 async function resolveLocationCoordinates(field: 'origin' | 'destination') {
+  if (store.state.mode === 'demo') return
   const currentCoordinates = field === 'origin' ? store.state.originCoordinates : store.state.destinationCoordinates
   if (currentCoordinates) return
 
@@ -102,13 +114,13 @@ async function resolveLocationCoordinates(field: 'origin' | 'destination') {
   if (query.trim().length < 2) return
 
   try {
-    const suggestions = await searchLocations(query)
+    const suggestions = await searchLocations(query, undefined, 'live')
     const match = suggestions.find(location => location.latitude !== null && location.longitude !== null)
     if (match && match.latitude !== null && match.longitude !== null) {
       setPointCoordinates(field, { latitude: match.latitude, longitude: match.longitude })
     }
-  } catch {
-    // Route planning remains usable with the sample data if geocoding is offline.
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : 'Live location search is unavailable. Start the backend or switch to Demo mode.')
   }
 }
 
@@ -125,14 +137,33 @@ function useRoute(id: string) {
 
 function editTrip() {
   formPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  document.getElementById('crop')?.focus({ preventScroll: true })
+  document.getElementById('crop-count')?.focus({ preventScroll: true })
 }
 
 onMounted(() => {
   void loadRoutes(true)
 })
 
-watch(() => store.state.mode, () => {
+watch(() => store.state.mode, (mode) => {
+  generalError.value = ''
+  store.state.apiConnected = false
+  if (mode === 'demo') {
+    const demoRoutes = makeDemoRoutes({
+      ...store.trip,
+      cropLoads: store.trip.cropLoads.map(crop => ({ ...crop })),
+      deliveryPoints: [...store.trip.deliveryPoints],
+    })
+    store.replaceRoutes(demoRoutes)
+    store.state.routeSource = 'demo'
+    store.state.routeMessage = 'Demo route options - sample road, weather and risk data only.'
+    store.state.selectedRouteId = 'optimal'
+    return
+  }
+
+  store.replaceRoutes([])
+  store.state.selectedRouteId = ''
+  store.state.routeSource = 'api'
+  store.state.routeMessage = 'Live route and risk services are required. No sample fallback will be used.'
   if (store.trip.origin.trim() && store.trip.destination.trim()) void loadRoutes()
 })
 </script>
@@ -156,6 +187,7 @@ watch(() => store.state.mode, () => {
           :trip="store.trip"
           :errors="store.state.fieldErrors"
           :loading="store.state.loadingRoutes"
+          :mode="store.state.mode"
           @find-routes="loadRoutes()"
           @location-selected="handleLocationSelected"
           @location-cleared="handleLocationCleared"
@@ -175,12 +207,17 @@ watch(() => store.state.mode, () => {
           <span class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} options</span>
         </div>
 
-        <Alert variant="warning" class="demo-banner">
+        <Alert :variant="store.state.mode === 'demo' ? 'warning' : store.state.apiConnected ? 'default' : 'danger'" class="demo-banner">
           <Info :size="18" aria-hidden="true" />
           <div>
-            <strong>{{ store.state.mode === 'demo' ? 'Demo mode' : store.state.apiConnected ? 'Live mode - backend connected' : 'Live mode - sample fallback' }}</strong>
-            <p>{{ store.state.mode === 'demo' ? 'Local route lines and risk levels for layout testing.' : store.state.routeMessage }}</p>
+            <strong>{{ store.state.mode === 'demo' ? 'Demo mode' : store.state.apiConnected ? 'Live mode - backend connected' : 'Live mode - backend required' }}</strong>
+            <p>{{ store.state.mode === 'demo' ? 'Local mock route lines and risk levels for layout testing.' : store.state.routeMessage }}</p>
           </div>
+        </Alert>
+
+        <Alert v-if="generalError" variant="danger" class="integration-error-banner" role="alert">
+          <Info :size="18" aria-hidden="true" />
+          <div><strong>{{ store.state.mode === 'live' ? 'Live integration unavailable' : 'Route request error' }}</strong><p>{{ generalError }}</p></div>
         </Alert>
 
         <section class="route-choice-column" aria-labelledby="route-choice-heading">
@@ -192,9 +229,12 @@ watch(() => store.state.mode, () => {
           </div>
 
           <div class="route-choice-panel">
-            <Alert v-if="displayRoutes.length === 0" variant="warning" class="empty-routes">
+            <Alert v-if="displayRoutes.length === 0" :variant="store.state.mode === 'live' ? 'danger' : 'warning'" class="empty-routes">
               <Info :size="18" aria-hidden="true" />
-              <div><strong>No routes found.</strong><p>Check your delivery details and try again.</p></div>
+              <div>
+                <strong>{{ store.state.mode === 'live' ? 'Live routes are unavailable.' : 'No routes found.' }}</strong>
+                <p>{{ store.state.mode === 'live' ? 'The live route backend is not integrated yet. Switch to Demo mode for sample routes.' : 'Check your delivery details and try again.' }}</p>
+              </div>
             </Alert>
 
             <div v-else class="route-list">
@@ -211,8 +251,6 @@ watch(() => store.state.mode, () => {
             </div>
           </div>
         </section>
-
-        <p v-if="generalError" class="form-error-banner" role="alert">{{ generalError }}</p>
 
         <div class="map-column">
           <RouteMap

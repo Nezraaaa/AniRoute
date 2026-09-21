@@ -5,8 +5,8 @@ This is the backend-only backlog for AniRoute. The frontend demo flow is intenti
 ## Current integration boundary
 
 - Demo mode does not require the API for route calculation or simulated hazard confirmation.
-- Live route calculation can call the configured FastAPI endpoint, but the returned route data is still demo-quality unless a real routing engine is connected.
-- The active camera currently demonstrates automatic simulated findings in the browser. The scanner start/frame/stop service adapters exist for the future backend connection; the current demo does not claim live model inference.
+- Live route calculation calls the configured API only. The frontend rejects responses marked as demo data and shows an integration error until a real routing engine is connected.
+- The active camera demonstrates automatic simulated findings only in Demo mode. Live mode calls the scanner contract without creating sample findings; unavailable or demo-only capability is shown as an error.
 - A future non-simulated hazard can use the existing confirmation and recheck adapters once the backend returns real detections and accepts production observations.
 - The original frontend/product brief remains in [docs/aniroute_frontend_implementation_spec.md](docs/aniroute_frontend_implementation_spec.md). This file should stay focused on backend implementation and operations.
 
@@ -21,7 +21,7 @@ This is the backend-only backlog for AniRoute. The frontend demo flow is intenti
 | P1 | Weather, flood, and temperature feeds | Static sample weather/flood/temperature text | Integrate and normalize suitable PAGASA and Philippine flood/hazard sources. Define freshness, provider failures, rate limits, and fallback behavior. |
 | P1 | Crop-aware scoring | Small deterministic crop/load adjustments for sample output | Define explainable scoring for travel time, distance, road risk, flood/weather, temperature, crop sensitivity, and load. Validate the weights with agronomy and transport data before presenting operational recommendations. |
 | P1 | Route recheck after a confirmed event | Demo logic deterministically changes the recommendation after a simulated confirmation | Recalculate against updated route-segment risk and return changed recommendation, reasons, geometry, current-route usability, and source timestamps. |
-| P1 | Production geocoding and address resolution | Backend-proxied Nominatim suggestions with local sample fallbacks | Select a provider or self-hosted service, configure quotas and caching, handle rural landmarks and ambiguous matches, and apply privacy/rate-limit controls. |
+| P1 | Production geocoding and address resolution | Demo uses local sample suggestions; Live uses backend-proxied Nominatim suggestions and reports failures | Select a provider or self-hosted service, configure quotas and caching, handle rural landmarks and ambiguous matches, and apply privacy/rate-limit controls. |
 | P2 | Live trip progress and turn-by-turn guidance | Active trip shows a sample direction and starting ETA/distance | Match GPS to real route geometry, calculate remaining time/distance, and return validated next-turn instructions. |
 | P2 | API security and production deployment | No authentication; CORS defaults to local Vite origins; demo uploads are lightly validated | Deploy over HTTPS, configure strict origins, rate limits, authentication/authorization when needed, upload scanning, consent/privacy retention, secrets management, monitoring, and backups. |
 | P2 | Map tile and geocoding operations | Keyed CARTO Voyager tiles and backend-proxied Nominatim are used for local development | Confirm production providers, capacity, attribution, usage terms, domain restrictions, and server-side token handling where required. |

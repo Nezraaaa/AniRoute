@@ -67,6 +67,12 @@ function unwrapRouteResponse(data: ApiRouteResponse, fallbackSource: DataSource)
   }
 }
 
+function assertLiveRouteData(data: ApiRouteResponse) {
+  if (data.data_source && data.data_source !== 'api') {
+    throw new Error('Live route engine is not integrated yet. Switch to Demo mode for sample routes.')
+  }
+}
+
 export async function calculateRoutes(trip: TripInput, mode: AppMode = 'live'): Promise<RouteResult> {
   if (mode === 'demo') {
     return {
@@ -78,16 +84,15 @@ export async function calculateRoutes(trip: TripInput, mode: AppMode = 'live'): 
 
   try {
     const response = await postJson<ApiRouteResponse>(appConfig.paths.routes, trip)
+    assertLiveRouteData(response)
     const result = unwrapRouteResponse(response, 'api')
     if (result.routes.length > 0) return result
-    throw new Error('No route options were returned. Try again.')
+    throw new Error('No live route options were returned. Try again.')
   } catch (error) {
-    if (!appConfig.demoMode || !(error instanceof BackendUnavailableError)) throw error
-    return {
-      routes: makeDemoRoutes(trip), source: 'demo',
-      message: 'Backend offline · showing sample route options.',
-      recommendedRouteId: 'optimal',
+    if (error instanceof BackendUnavailableError) {
+      throw new Error('Live route backend is unavailable. Start the backend or switch to Demo mode.')
     }
+    throw error
   }
 }
 
@@ -117,19 +122,14 @@ export async function recalculateRoute(
       road_segment_id: hazard.roadSegmentId,
       observation_id: hazard.observationId,
     })
+    assertLiveRouteData(response)
     const result = unwrapRouteResponse(response, 'api')
     if (result.routes.length > 0) return { ...result, changed: response.changed ?? false }
-    throw new Error('No route options were returned after the road update.')
+    throw new Error('No live route options were returned after the road update.')
   } catch (error) {
-    if (!appConfig.demoMode || !(error instanceof BackendUnavailableError)) throw error
-    const routes = makeDemoRoutes(trip, activeRouteId)
-    const recommendedRouteId = routes.find(route => route.recommended)?.id ?? 'safer'
-    return {
-      routes,
-      source: 'demo',
-      message: 'Sample route checked after the confirmed finding.',
-      recommendedRouteId,
-      changed: recommendedRouteId !== activeRouteId,
+    if (error instanceof BackendUnavailableError) {
+      throw new Error('Live route recheck backend is unavailable. Start the backend or switch to Demo mode.')
     }
+    throw error
   }
 }

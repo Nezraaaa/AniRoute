@@ -1,5 +1,5 @@
 import { apiUrl, appConfig } from './config'
-import type { LocationSuggestion } from '@/types/aniRoute'
+import type { AppMode, LocationSuggestion } from '@/types/aniRoute'
 
 interface GeocodingResponseItem {
   place_id?: number | string
@@ -11,15 +11,22 @@ interface GeocodingResponseItem {
   type?: string
 }
 
-export async function searchLocations(query: string, signal?: AbortSignal): Promise<LocationSuggestion[]> {
+export async function searchLocations(query: string, signal?: AbortSignal, mode: AppMode = 'live'): Promise<LocationSuggestion[]> {
   const trimmedQuery = query.trim()
   if (trimmedQuery.length < 2) return []
+  if (mode === 'demo') return []
 
   const params = new URLSearchParams({ q: trimmedQuery, limit: '6' })
-  const response = await fetch(`${apiUrl(appConfig.paths.geocode)}?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
-    signal,
-  })
+  let response: Response
+  try {
+    response = await fetch(`${apiUrl(appConfig.paths.geocode)}?${params.toString()}`, {
+      headers: { Accept: 'application/json' },
+      signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    throw new Error('Live location search backend is unavailable. Start the backend or switch to Demo mode.')
+  }
 
   if (!response.ok) throw new Error(`Location search failed with status ${response.status}.`)
 

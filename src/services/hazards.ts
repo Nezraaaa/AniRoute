@@ -19,6 +19,7 @@ interface UploadResponse {
 
 interface DetectionResponse {
   detection_available: boolean
+  data_source?: DataSource
   detection: null | {
     detection_id: string
     hazard_type: DetectedHazard['type']
@@ -32,26 +33,44 @@ interface DetectionResponse {
   }
 }
 
-export async function startHazardScanning(routeId: string): Promise<CameraScannerStatus> {
+export async function startHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<CameraScannerStatus> {
+  if (mode === 'demo') {
+    return {
+      mode: 'demo',
+      detectionAvailable: true,
+      message: 'Demo computer vision is running locally. No backend request is made.',
+    }
+  }
+
   try {
     const result = await postJson<ScannerResponse>(appConfig.paths.scannerStart, { route_id: routeId })
+    if (result.mode === 'demo') {
+      return {
+        mode: 'live',
+        detectionAvailable: false,
+        message: 'Live road detection is not integrated yet. Switch to Demo mode for the local sample detector.',
+      }
+    }
     return {
-      mode: result.mode,
+      mode: 'live',
       detectionAvailable: result.detection_available,
       message: result.message,
     }
   } catch (error) {
     return {
-      mode: 'demo',
+      mode: 'live',
       detectionAvailable: false,
-      message: error instanceof Error && !(error instanceof BackendUnavailableError)
-        ? error.message
-        : 'Live road detection is not connected. Use the sample finding to try the confirmation flow.',
+      message: error instanceof BackendUnavailableError
+        ? 'Live road detection backend is unavailable. Start the backend to enable computer vision.'
+        : error instanceof Error
+          ? error.message
+          : 'Live road detection is unavailable.',
     }
   }
 }
 
-export async function stopHazardScanning(routeId: string): Promise<void> {
+export async function stopHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<void> {
+  if (mode === 'demo') return
   try {
     await postJson(appConfig.paths.scannerStop, { route_id: routeId })
   } catch {
@@ -63,7 +82,9 @@ export async function scanCameraFrame(
   routeId: string,
   frameDataUrl: string,
   coordinates?: Coordinates | null,
+  mode: AppMode = 'live',
 ): Promise<DetectedHazard | null> {
+  if (mode === 'demo') return null
   const result = await postJson<DetectionResponse>(appConfig.paths.scannerFrame, {
     route_id: routeId,
     captured_at: new Date().toISOString(),
@@ -71,6 +92,9 @@ export async function scanCameraFrame(
     longitude: coordinates?.longitude,
     frame_data_url: frameDataUrl,
   })
+  if (result.data_source && result.data_source !== 'api') {
+    throw new Error('Live road detection is not integrated yet. Switch to Demo mode for the local sample detector.')
+  }
   const detection = result.detection
   if (!result.detection_available || !detection) return null
   const detectedCoordinates = detection.latitude !== undefined && detection.longitude !== undefined
@@ -117,6 +141,9 @@ export async function confirmHazard(
   mode: AppMode = 'live',
 ): Promise<HazardUploadResult> {
   if (mode === 'demo') return saveLocalDemo(hazard, evidenceFrameDataUrl)
+  if (hazard.simulated) {
+    throw new Error('Simulated findings are available only in Demo mode.')
+  }
 
   try {
     const result = await postJson<UploadResponse>(appConfig.paths.hazardConfirm, {
@@ -131,6 +158,9 @@ export async function confirmHazard(
       simulated: hazard.simulated,
       evidence_frame_data_url: evidenceFrameDataUrl,
     })
+    if (result.data_source !== 'api') {
+      throw new Error('Live hazard confirmation is not integrated yet. Switch to Demo mode for the local confirmation flow.')
+    }
     return {
       id: result.observation_id,
       status: result.status,
@@ -140,7 +170,9 @@ export async function confirmHazard(
       evidenceStored: result.evidence_stored,
     }
   } catch (error) {
-    if (!appConfig.demoMode || !(error instanceof BackendUnavailableError)) throw error
-    return saveLocalDemo(hazard, evidenceFrameDataUrl)
+    if (error instanceof BackendUnavailableError) {
+      throw new Error('Live hazard confirmation backend is unavailable. Start the backend or switch to Demo mode.')
+    }
+    throw error
   }
 }

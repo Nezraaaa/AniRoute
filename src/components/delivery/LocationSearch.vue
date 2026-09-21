@@ -3,17 +3,19 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { LoaderCircle, MapPin, Search } from '@lucide/vue'
 import Input from '@/components/ui/Input.vue'
 import { searchLocations } from '@/services/geocoding'
-import type { Coordinates, LocationSuggestion } from '@/types/aniRoute'
+import type { AppMode, Coordinates, LocationSuggestion } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   id: string
   modelValue: string
   placeholder: string
+  mode?: AppMode
   icon?: 'pin' | 'search'
   invalid?: boolean
   describedBy?: string
   localSuggestions?: string[]
 }>(), {
+  mode: 'live',
   icon: 'pin',
   invalid: false,
   describedBy: undefined,
@@ -32,7 +34,7 @@ const searching = ref(false)
 const open = ref(false)
 const focused = ref(false)
 const activeIndex = ref(-1)
-const searchError = ref(false)
+const searchErrorMessage = ref('')
 let searchTimer: number | undefined
 let requestController: AbortController | undefined
 
@@ -47,10 +49,20 @@ const localPlaceCoordinates: Record<string, Coordinates> = {
 
 const listId = computed(() => `${props.id}-location-list`)
 const datalistId = computed(() => `${props.id}-suggestions`)
-const hasNoMatches = computed(() => open.value && !searching.value && query.value.trim().length >= 2 && suggestions.value.length === 0)
+const hasNoMatches = computed(() => open.value && !searching.value && !searchErrorMessage.value && query.value.trim().length >= 2 && suggestions.value.length === 0)
 
 watch(() => props.modelValue, value => {
   if (value !== query.value) query.value = value
+})
+
+watch(() => props.mode, mode => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+  requestController?.abort()
+  searching.value = false
+  activeIndex.value = -1
+  searchErrorMessage.value = ''
+  suggestions.value = mode === 'demo' ? localMatches(query.value) : []
+  if (mode === 'live' && focused.value && query.value.trim().length >= 2) scheduleSearch(query.value)
 })
 
 function localMatches(value: string): LocationSuggestion[] {
@@ -78,10 +90,11 @@ function scheduleSearch(value: string) {
   requestController?.abort()
   searching.value = false
   activeIndex.value = -1
-  searchError.value = false
-  suggestions.value = localMatches(value)
+  searchErrorMessage.value = ''
+  suggestions.value = props.mode === 'demo' ? localMatches(value) : []
   open.value = value.trim().length >= 2
   if (value.trim().length < 2) return
+  if (props.mode === 'demo') return
 
   searchTimer = window.setTimeout(() => { void runSearch(value) }, 300)
 }
@@ -92,13 +105,15 @@ async function runSearch(value: string) {
   searching.value = true
   open.value = focused.value
   try {
-    const remoteSuggestions = await searchLocations(value, controller.signal)
+    const remoteSuggestions = await searchLocations(value, controller.signal, props.mode)
     if (controller.signal.aborted) return
-    suggestions.value = remoteSuggestions.length ? remoteSuggestions : localMatches(value)
+    suggestions.value = remoteSuggestions
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return
-    suggestions.value = localMatches(value)
-    searchError.value = true
+    suggestions.value = []
+    searchErrorMessage.value = error instanceof Error
+      ? error.message
+      : 'Live location search is unavailable. Start the backend or switch to Demo mode.'
   } finally {
     if (!controller.signal.aborted) searching.value = false
   }
@@ -196,9 +211,12 @@ onBeforeUnmount(() => {
       <LoaderCircle v-if="searching" class="location-search-spinner" :size="17" aria-label="Searching locations" />
     </div>
 
-    <div v-if="open && (suggestions.length || searching || hasNoMatches)" :id="listId" class="location-suggestions" role="listbox" :aria-label="`${id} location suggestions`">
+    <div v-if="open && (suggestions.length || searching || hasNoMatches || searchErrorMessage)" :id="listId" class="location-suggestions" role="listbox" :aria-label="`${id} location suggestions`">
       <div v-if="searching" class="location-suggestion-status" role="status">
         <LoaderCircle :size="15" aria-hidden="true" /> Searching locations…
+      </div>
+      <div v-else-if="searchErrorMessage" class="location-suggestion-status location-suggestion-error" role="alert">
+        {{ searchErrorMessage }}
       </div>
       <template v-else>
         <button
@@ -224,7 +242,7 @@ onBeforeUnmount(() => {
     </div>
 
     <datalist :id="datalistId">
-      <option v-for="place in localSuggestions" :key="place" :value="place" />
+      <option v-if="mode === 'demo'" v-for="place in localSuggestions" :key="place" :value="place" />
       <option v-for="location in suggestions" :key="`remote-${location.id}`" :value="location.displayName" />
     </datalist>
   </div>

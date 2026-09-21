@@ -48,7 +48,7 @@ npm run dev
 
 Open the Vite address shown in the terminal, usually `http://localhost:5173`. The API health check and interactive API docs are at `http://127.0.0.1:8000/api/health` and `http://127.0.0.1:8000/docs`.
 
-The planner also works without the API when `VITE_DEMO_MODE=true`. It uses clearly labeled local sample routes and automatic hardcoded camera findings; simulated confirmations stay in the current browser only. The included API remains a runnable contract for live route requests, geocoding, future scanner inference, and direct confirmed-observation storage under `backend/data/`.
+Use the **Demo / Live** switch in the header to choose the integration boundary. Demo mode uses local mock routes, local location suggestions, automatic hardcoded camera findings, and browser-only confirmations without making backend requests. Live mode calls the configured backend only; if a service is unavailable or still returns demo data, the UI shows an explicit integration error and does not fall back to mock data.
 
 ## Configure the backend and map
 
@@ -57,7 +57,6 @@ Copy `.env.example` to `.env` and edit the public frontend settings:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_API_BASE_URL` | FastAPI base URL, default `http://127.0.0.1:8000` |
-| `VITE_DEMO_MODE` | Allows labeled sample fallbacks when true; set false to surface backend errors |
 | `VITE_CARTO_BASEMAP_KEY` | Public CARTO basemap key used for Voyager raster tiles; `NEXT_PUBLIC_CARTO_BASEMAP_KEY` is also accepted |
 | `VITE_MAP_STYLE_URL` | Optional public MapLibre style URL; blank uses the keyed CARTO Voyager raster basemap with OpenStreetMap attribution |
 | `VITE_API_ROUTES_PATH` | Route calculation endpoint path |
@@ -75,11 +74,11 @@ The API accepts `CORS_ORIGINS` as a comma-separated environment variable. Its de
 
 ## Try the main flow
 
-1. The planner opens with blank crop and quantity fields plus a selectable vehicle. Enter the crop name and amount for the current delivery; pickup and delivery are blank until you search or enter locations.
-2. Type a pickup farm or delivery point. The backend returns location suggestions as you type; choose one to place its coordinates on the map. You can also drag the A and B location pins after they appear. Select **Find routes** to refresh the route estimates; the bundled route lines remain illustrative until a real road-routing engine is connected.
+1. The planner opens with zero crop types and delivery points plus a selectable vehicle. Enter `2` crop types to get two crop-name/quantity rows, then enter the number of delivery points to get one searchable field per stop.
+2. In Demo mode, type a pickup farm or delivery point and choose a local sample suggestion. In Live mode, suggestions come from the backend and an unavailable service is shown as an error. Select **Find routes** to refresh the route estimates; Demo uses illustrative lines, while Live requires a real routing response.
 3. Compare **Optimal**, **Safer**, and **Fastest** choices. Select a card to highlight it on the map, then choose **Use this route**.
 4. On the active route, allow camera and location access if available. Camera access is requested only after the route starts. The app says clearly when either permission is unavailable.
-5. The live model is not part of this demo. When the camera is on, a simulated finding appears automatically; click it to review the captured frame. **Not now** dismisses it without sending anything. **Confirm & upload** saves the simulated finding locally in the browser and asks the local demo route logic to recheck the route. The live camera stays mounted and resumes automatic sample detection after the finding is closed.
+5. In Demo mode, the camera automatically shows a simulated finding; click it to review the captured frame. **Not now** dismisses it without sending anything. **Confirm & upload** saves the simulated finding locally in the browser and asks the local demo route logic to recheck the route. In Live mode, the camera can request the real scanner contract, but no sample finding is shown; unavailable or demo-only backend capabilities are shown as errors.
 6. If the recheck changes the recommendation, choose whether to switch routes. **End route** stops the camera stream and geolocation watcher.
 
 No location is guessed when the browser cannot provide GPS. A confirmed finding may then be saved without coordinates, with the missing location shown in the confirmation.

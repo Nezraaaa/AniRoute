@@ -44,8 +44,8 @@ function setMode(nextMode: AppMode) {
       <RouterView />
     </main>
     <footer class="app-footer">
-      <span>AniRoute sample experience</span>
-      <span>Demo routes and risk levels are not live road advice.</span>
+      <span>AniRoute {{ mode === 'demo' ? 'demo experience' : 'live integration' }}</span>
+      <span>{{ mode === 'demo' ? 'Demo routes and risk levels are not live road advice.' : 'Live routes, risk data and detection require the backend.' }}</span>
     </footer>
   </div>
 </template>
