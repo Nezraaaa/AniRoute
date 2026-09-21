@@ -11,6 +11,7 @@ describe('DeliveryForm', () => {
 
     expect(wrapper.get('#crop-count').attributes('type')).toBe('number')
     expect(wrapper.get('#destination-count').attributes('type')).toBe('number')
+    expect(wrapper.get('#vehicle').text()).toContain('Motorcycle / Habal-habal')
     expect(wrapper.findAll('#crop-0')).toHaveLength(0)
     expect(wrapper.findAll('#destination-0')).toHaveLength(0)
 

@@ -32,6 +32,7 @@ const emit = defineEmits<{
 const maxDynamicEntries = 8
 const vehicleChoices = [
   { value: 'Pickup', label: 'Pickup' },
+  { value: 'Motorcycle', label: 'Motorcycle / Habal-habal' },
   { value: 'Small truck', label: 'Small truck' },
   { value: 'Medium truck', label: 'Medium truck' },
 ]

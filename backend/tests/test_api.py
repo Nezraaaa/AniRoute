@@ -68,6 +68,16 @@ def test_invalid_trip_is_rejected():
         trip_input(quantity=0)
 
 
+def test_trip_accepts_multiple_delivery_points_and_crop_loads():
+    trip = trip_input(
+        cropLoads=[{"name": "Tomatoes", "quantity": 125}, {"name": "Mangoes", "quantity": 80}],
+        deliveryPoints=["Koronadal trading post", "General Santos public market"],
+    )
+
+    assert [crop.name for crop in trip.crop_loads] == ["Tomatoes", "Mangoes"]
+    assert trip.delivery_points == ["Koronadal trading post", "General Santos public market"]
+
+
 def test_scanner_does_not_claim_live_detection():
     result = main.start_scanning(main.ScanStart(route_id="optimal"))
     assert result["mode"] == "demo"

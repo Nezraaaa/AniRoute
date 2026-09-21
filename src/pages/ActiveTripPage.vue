@@ -41,9 +41,16 @@ const newRecommendedRoute = computed(() => store.routes.find(item => item.id ===
 const cameraPreview = ref<{ captureFrame: (maxWidth?: number, quality?: number) => string | undefined } | null>(null)
 let detectionTimer: number | undefined
 
-function updateDraggedPoint(field: 'origin' | 'destination', coordinates: Coordinates) {
+function updateDraggedPoint(field: 'origin' | 'destination', coordinates: Coordinates, index?: number) {
   if (field === 'origin') store.state.originCoordinates = coordinates
-  else store.state.destinationCoordinates = coordinates
+  else {
+    const pointIndex = index ?? Math.max(store.trip.deliveryPoints.length - 1, 0)
+    while (store.state.deliveryPointCoordinates.length <= pointIndex) store.state.deliveryPointCoordinates.push(null)
+    store.state.deliveryPointCoordinates[pointIndex] = coordinates
+    store.state.destinationCoordinates = store.state.deliveryPointCoordinates
+      .filter((point): point is Coordinates => Boolean(point))
+      .at(-1) ?? null
+  }
 }
 
 const categoryLabels: Record<RouteCategory, string> = {
@@ -297,6 +304,7 @@ onBeforeUnmount(() => {
           :current-location="currentLocation"
           :origin-coordinates="store.state.originCoordinates"
           :destination-coordinates="store.state.destinationCoordinates"
+          :delivery-point-coordinates="store.state.deliveryPointCoordinates"
           active
           @point-dragged="updateDraggedPoint"
         />

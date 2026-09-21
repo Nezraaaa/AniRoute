@@ -41,6 +41,7 @@ This is the backend-only backlog for AniRoute. The frontend demo flow is intenti
 ## Backend acceptance checklist
 
 - Keep the JSON field names consumed by `src/services/routes.ts` and `src/services/hazards.ts`, or update the typed adapters and tests together.
+- Route requests already carry the repeatable `cropLoads` and `deliveryPoints` fields; the production route engine must use every delivery point in order and return geometry that covers all stops.
 - Return real source and freshness metadata for route, hazard, weather, and risk responses.
 - Never report `detection_available: true` until the model service is healthy and returning validated detections.
 - Keep confirmation idempotent so retries cannot duplicate the same observation.

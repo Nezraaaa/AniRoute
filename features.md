@@ -20,9 +20,9 @@ Source-of-truth boundaries:
 ## Delivery planning
 
 - The planner starts with zero crop types and zero delivery points plus a selectable vehicle. Entering a crop count creates one crop-name and quantity row per crop; entering a delivery-point count creates one searchable location row per stop.
-- Crop rows, vehicle, pickup, and delivery fields have visible labels and inline validation. The current crop and destination summaries are derived from the repeatable rows before the route adapter is called.
+- Crop rows, vehicle (including Motorcycle / Habal-habal), pickup, and delivery fields have visible labels and inline validation. The current crop and destination summaries are derived from the repeatable rows before the route adapter is called.
 - Pickup and delivery search provides debounced location suggestions through the backend geocoding adapter, with local sample fallbacks for the demo.
-- Selecting a location stores its coordinates and places a draggable A/B pin on the map. Clearing a field also clears its map coordinate.
+- Selecting a location stores its coordinates and places draggable A/B/C and later stop pins on the map. Clearing a field also clears its map coordinate.
 - **Find routes** validates the trip and calls the typed route adapter. Demo mode uses deterministic local sample routes only; Live mode calls the configured API only and shows an explicit error when the backend is unavailable or returns demo data.
 - **Edit trip** returns focus to the delivery details.
 
@@ -33,8 +33,8 @@ Source-of-truth boundaries:
 - Each route has a large **Use this route** action. Selecting a card highlights its line on the map.
 - Duplicate route geometry is grouped into one displayed option with category badges.
 - MapLibre uses the keyed CARTO Voyager raster basemap with CARTO and OpenStreetMap attribution. The empty state is centered over the Philippines with a pitched 3D presentation so the Luzon-Visayas-Mindanao region is visible.
-- The map no longer defaults to Mindanao, creates A/B pins, or draws the sample route corridor before a pickup or delivery coordinate is selected.
-- Once a location is selected, the illustrative route lines are repositioned around the selected coordinate pair. The A/B pins can be dragged to update the endpoints.
+- The map no longer defaults to Mindanao, creates pickup/delivery pins, or draws the sample route corridor before a pickup or delivery coordinate is selected.
+- Once locations are selected, Demo route lines connect the pickup and each delivery stop in order; Live route geometry is used as returned by the backend. The A/B/C and later pins can be dragged to update their coordinates.
 - The map header has no CARTO Voyager badge. The Ctrl+scroll cooperative-gesture prompt is disabled.
 - The map displays route line colors, navigation controls, selected-route emphasis, a clean empty state, and a map-unavailable fallback. Sample road-note pins and the road-note legend item are not rendered on the map.
 - Route geometry and risk values remain illustrative until a real road-routing and risk service is connected.

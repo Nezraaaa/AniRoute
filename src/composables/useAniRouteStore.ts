@@ -23,6 +23,7 @@ const state = reactive({
   apiConnected: false,
   originCoordinates: null as Coordinates | null,
   destinationCoordinates: null as Coordinates | null,
+  deliveryPointCoordinates: [] as Array<Coordinates | null>,
 })
 
 const selectedRoute = computed(() => routes.find(route => route.id === state.selectedRouteId) ?? routes[0] ?? null)

@@ -14,7 +14,7 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 DataSource = Literal["demo"]
@@ -27,13 +27,22 @@ GEOCODER_USER_AGENT = os.getenv("ANIROUTE_GEOCODER_USER_AGENT", "AniRoute/1.0 (l
 _write_lock = threading.Lock()
 
 
+class CropLoad(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    quantity: float = Field(gt=0, le=100_000)
+
+
 class TripInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     crop: str = Field(min_length=1, max_length=60)
     quantity: float = Field(gt=0, le=100_000)
     unit: Literal["kg"] = "kg"
     vehicle: str = Field(min_length=1, max_length=60)
     origin: str = Field(min_length=1, max_length=180)
     destination: str = Field(min_length=1, max_length=180)
+    crop_loads: list[CropLoad] = Field(default_factory=list, alias="cropLoads", max_length=8)
+    delivery_points: list[str] = Field(default_factory=list, alias="deliveryPoints", max_length=8)
 
 
 class HazardConfirmation(BaseModel):
@@ -111,7 +120,7 @@ def _routes(trip: TripInput, affected_route_id: str | None = None) -> list[dict]
     destination = trip.destination.strip().lower()
     location_text = f"{origin}|{destination}"
     location_shift = 0 if (origin, destination) == (default_origin, default_destination) else 1 + sum(map(ord, location_text)) % 6
-    vehicle_time_shift = -2 if trip.vehicle == "Pickup" else 7 if trip.vehicle == "Medium truck" else 0 if trip.vehicle == "Small truck" else 3
+    vehicle_time_shift = -6 if trip.vehicle == "Motorcycle" else -2 if trip.vehicle == "Pickup" else 7 if trip.vehicle == "Medium truck" else 0 if trip.vehicle == "Small truck" else 3
     load_delta = trip.quantity - 250
     load_ratio = load_delta / 250
     rounded_load_steps = int(load_ratio + 0.5) if load_ratio >= 0 else int(load_ratio - 0.5)

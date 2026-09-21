@@ -74,8 +74,8 @@ The API accepts `CORS_ORIGINS` as a comma-separated environment variable. Its de
 
 ## Try the main flow
 
-1. The planner opens with zero crop types and delivery points plus a selectable vehicle. Enter `2` crop types to get two crop-name/quantity rows, then enter the number of delivery points to get one searchable field per stop.
-2. In Demo mode, type a pickup farm or delivery point and choose a local sample suggestion. In Live mode, suggestions come from the backend and an unavailable service is shown as an error. Select **Find routes** to refresh the route estimates; Demo uses illustrative lines, while Live requires a real routing response.
+1. The planner opens with zero crop types and delivery points plus a selectable vehicle, including Motorcycle / Habal-habal. Enter `2` crop types to get two crop-name/quantity rows, then enter the number of delivery points to get one searchable field per stop.
+2. In Demo mode, type a pickup farm or delivery point and choose a local sample suggestion. In Live mode, suggestions come from the backend and an unavailable service is shown as an error. Select **Find routes** to refresh the route estimates; Demo uses illustrative lines, while Live requires a real routing response. With multiple stops, the map labels the pickup A and deliveries B, C, D, and so on.
 3. Compare **Optimal**, **Safer**, and **Fastest** choices. Select a card to highlight it on the map, then choose **Use this route**.
 4. On the active route, allow camera and location access if available. Camera access is requested only after the route starts. The app says clearly when either permission is unavailable.
 5. In Demo mode, the camera automatically shows a simulated finding; click it to review the captured frame. **Not now** dismisses it without sending anything. **Confirm & upload** saves the simulated finding locally in the browser and asks the local demo route logic to recheck the route. In Live mode, the camera can request the real scanner contract, but no sample finding is shown; unavailable or demo-only backend capabilities are shown as errors.

@@ -12,11 +12,12 @@ const props = withDefaults(defineProps<{
   currentLocation?: Coordinates | null
   originCoordinates?: Coordinates | null
   destinationCoordinates?: Coordinates | null
+  deliveryPointCoordinates?: Array<Coordinates | null>
   active?: boolean
-}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, active: false })
+}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false })
 
 const emit = defineEmits<{
-  'point-dragged': [field: 'origin' | 'destination', coordinates: Coordinates]
+  'point-dragged': [field: 'origin' | 'destination', coordinates: Coordinates, index?: number]
 }>()
 
 const mapElement = ref<HTMLDivElement | null>(null)
@@ -24,7 +25,7 @@ const map = shallowRef<MapInstance | null>(null)
 const unavailable = ref(false)
 const mapReady = ref(false)
 const fallbackStyleActive = ref(false)
-const draggedPoints = ref<{ origin: [number, number] | null; destination: [number, number] | null }>({ origin: null, destination: null })
+const draggedPoints = ref<{ origin: [number, number] | null; destinations: Record<number, [number, number]> }>({ origin: null, destinations: {} })
 let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
@@ -102,17 +103,37 @@ function pointFromCoordinates(value: Coordinates | null | undefined): MapPoint |
   return value ? [value.longitude, value.latitude] : null
 }
 
+function deliveryMapPoints() {
+  const points = props.deliveryPointCoordinates
+    .map((coordinates, index) => ({
+      index,
+      coordinate: draggedPoints.value.destinations[index] ?? pointFromCoordinates(coordinates),
+    }))
+    .filter((item): item is { index: number; coordinate: MapPoint } => Boolean(item.coordinate))
+
+  if (!points.length) {
+    const fallback = draggedPoints.value.destinations[0] ?? pointFromCoordinates(props.destinationCoordinates)
+    if (fallback) points.push({ index: 0, coordinate: fallback })
+  }
+  return points
+}
+
 function selectedMapPoints() {
   return {
     origin: draggedPoints.value.origin ?? pointFromCoordinates(props.originCoordinates),
-    destination: draggedPoints.value.destination ?? pointFromCoordinates(props.destinationCoordinates),
+    deliveries: deliveryMapPoints(),
   }
 }
 
-const hasMapSelection = computed(() => {
-  const { origin, destination } = selectedMapPoints()
-  return Boolean(origin || destination)
-})
+function selectedWaypoints() {
+  const { origin, deliveries } = selectedMapPoints()
+  return [
+    ...(origin ? [origin] : []),
+    ...deliveries.map(item => item.coordinate),
+  ]
+}
+
+const hasMapSelection = computed(() => selectedWaypoints().length > 0)
 
 function shiftRouteCoordinates(coordinates: MapPoint[], target: MapPoint, anchor: MapPoint): MapPoint[] {
   const longitudeDelta = target[0] - anchor[0]
@@ -120,42 +141,44 @@ function shiftRouteCoordinates(coordinates: MapPoint[], target: MapPoint, anchor
   return coordinates.map(([longitude, latitude]) => [longitude + longitudeDelta, latitude + latitudeDelta])
 }
 
+function routeThroughWaypoints(waypoints: MapPoint[], category: RouteOption['category']): MapPoint[] {
+  if (waypoints.length < 2) return waypoints
+  const categoryBend = category === 'safer' ? 0.06 : category === 'fastest' ? -0.045 : 0.018
+  const path: MapPoint[] = [waypoints[0]!]
+
+  for (let index = 0; index < waypoints.length - 1; index += 1) {
+    const start = waypoints[index]!
+    const end = waypoints[index + 1]!
+    const delta: MapPoint = [end[0] - start[0], end[1] - start[1]]
+    const length = Math.hypot(delta[0], delta[1])
+    if (length < 0.000001) {
+      path.push(end)
+      continue
+    }
+    const midpoint: MapPoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
+    const normal: MapPoint = [-delta[1] / length, delta[0] / length]
+    const bend = categoryBend * (index % 2 === 0 ? 1 : -1)
+    path.push([midpoint[0] + normal[0] * length * bend, midpoint[1] + normal[1] * length * bend])
+    path.push(end)
+  }
+  return path
+}
+
 function routeCoordinates(route: RouteOption): MapPoint[] {
   const coordinates = route.geometry.coordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
   if (!coordinates.length) return coordinates
 
-  const { origin, destination } = selectedMapPoints()
-  if (!origin && !destination) return []
+  const { origin } = selectedMapPoints()
+  const waypoints = selectedWaypoints()
+  if (!waypoints.length) return []
 
-  // Keep a single selected point and its route together instead of leaving the
-  // rest of the illustrative corridor anchored in the old Mindanao demo area.
-  if (origin && !destination) return shiftRouteCoordinates(coordinates, origin, coordinates[0])
-  if (!origin && destination) return shiftRouteCoordinates(coordinates, destination, coordinates[coordinates.length - 1])
-  if (!origin || !destination || coordinates.length < 2) return [origin ?? coordinates[0], destination ?? coordinates[coordinates.length - 1]]
+  if (route.source !== 'demo') return coordinates
 
-  const baseStart = coordinates[0]
-  const baseEnd = coordinates[coordinates.length - 1]
-  const baseDelta: MapPoint = [baseEnd[0] - baseStart[0], baseEnd[1] - baseStart[1]]
-  const targetDelta: MapPoint = [destination[0] - origin[0], destination[1] - origin[1]]
-  const baseLength = Math.hypot(baseDelta[0], baseDelta[1])
-  const targetLength = Math.hypot(targetDelta[0], targetDelta[1])
-  if (baseLength < 0.000001 || targetLength < 0.000001) return [origin, destination]
-
-  const baseNormal: MapPoint = [-baseDelta[1] / baseLength, baseDelta[0] / baseLength]
-  const targetNormal: MapPoint = [-targetDelta[1] / targetLength, targetDelta[0] / targetLength]
-  const categoryBend = route.category === 'safer' ? 0.045 : route.category === 'fastest' ? -0.035 : 0.012
-
-  return coordinates.map((point, index) => {
-    const progress = index / (coordinates.length - 1)
-    const baseLine: MapPoint = [baseStart[0] + baseDelta[0] * progress, baseStart[1] + baseDelta[1] * progress]
-    const baseLateral = ((point[0] - baseLine[0]) * baseNormal[0]) + ((point[1] - baseLine[1]) * baseNormal[1])
-    const baseLateralRatio = baseLateral / baseLength
-    const lateralRatio = Math.max(-0.22, Math.min(0.22, baseLateralRatio + categoryBend * Math.sin(Math.PI * progress)))
-    return [
-      origin[0] + targetDelta[0] * progress + targetNormal[0] * targetLength * lateralRatio,
-      origin[1] + targetDelta[1] * progress + targetNormal[1] * targetLength * lateralRatio,
-    ]
-  })
+  // Demo routes are illustrative: connect every selected stop in order so
+  // points A, B, C and later stops remain visible in the route preview.
+  if (waypoints.length > 1) return routeThroughWaypoints(waypoints, route.category)
+  const anchor = origin ? coordinates[0]! : coordinates[coordinates.length - 1]!
+  return shiftRouteCoordinates(coordinates, waypoints[0]!, anchor)
 }
 
 function makeLabel(text: string, className: string) {
@@ -170,7 +193,18 @@ function shortPlaceLabel(prefix: string, place: string) {
   return `${prefix} · ${name.length > 18 ? `${name.slice(0, 17)}…` : name}`
 }
 
-function makePointLabel(prefix: 'A' | 'B', place: string, className: string) {
+function deliveryPointLabel(index: number) {
+  let value = index + 2
+  let label = ''
+  while (value > 0) {
+    const remainder = (value - 1) % 26
+    label = String.fromCharCode(65 + remainder) + label
+    value = Math.floor((value - 1) / 26)
+  }
+  return label
+}
+
+function makePointLabel(prefix: string, place: string, className: string) {
   const node = document.createElement('button')
   node.type = 'button'
   node.className = `map-point-marker ${className}`
@@ -196,9 +230,10 @@ function createMarkers(shouldFitBounds = true) {
   markers.forEach(marker => marker.remove())
   markers = []
 
-  const { origin, destination } = selectedMapPoints()
+  const { origin } = selectedMapPoints()
+  const destinations = deliveryMapPoints()
 
-  const addPointMarker = (point: 'origin' | 'destination', prefix: 'A' | 'B', place: string, className: string, coordinate: [number, number]) => {
+  const addPointMarker = (point: 'origin' | 'destination', prefix: string, place: string, className: string, coordinate: [number, number], index?: number) => {
     const marker = new Marker({
       element: makePointLabel(prefix, place, className),
       anchor: 'bottom',
@@ -206,15 +241,19 @@ function createMarkers(shouldFitBounds = true) {
     }).setLngLat(coordinate)
     marker.on('dragend', () => {
       const next = marker.getLngLat()
-      draggedPoints.value[point] = [next.lng, next.lat]
-      emit('point-dragged', point, { latitude: next.lat, longitude: next.lng })
+      if (point === 'origin') draggedPoints.value.origin = [next.lng, next.lat]
+      else if (index !== undefined) draggedPoints.value.destinations[index] = [next.lng, next.lat]
+      emit('point-dragged', point, { latitude: next.lat, longitude: next.lng }, index)
       updateRoutes(false)
     })
     markers.push(marker.addTo(instance))
   }
 
   if (origin) addPointMarker('origin', 'A', props.trip.origin, 'map-point-marker-start', origin)
-  if (destination) addPointMarker('destination', 'B', props.trip.destination, 'map-point-marker-end', destination)
+  destinations.forEach(({ index, coordinate }) => {
+    const place = props.trip.deliveryPoints[index] ?? (index === 0 ? props.trip.destination : '')
+    addPointMarker('destination', deliveryPointLabel(index), place, 'map-point-marker-end', coordinate, index)
+  })
 
   if (props.currentLocation) {
     markers.push(new Marker({ element: makeLabel('Your location', 'map-marker-current'), anchor: 'center' })
@@ -223,7 +262,7 @@ function createMarkers(shouldFitBounds = true) {
 
   const boundPoints = uniqueRoutes().flatMap(route => routeCoordinates(route))
   if (origin) boundPoints.push(origin)
-  if (destination) boundPoints.push(destination)
+  destinations.forEach(({ coordinate }) => boundPoints.push(coordinate))
   if (props.currentLocation) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
   if (!boundPoints.length || !shouldFitBounds) return
 
@@ -240,9 +279,9 @@ function resetToNeutralView(instance: MapInstance) {
 }
 
 function initialMapView() {
-  const { origin, destination } = selectedMapPoints()
+  const { origin, deliveries } = selectedMapPoints()
   const currentLocation = pointFromCoordinates(props.currentLocation)
-  const anchor = origin ?? destination ?? currentLocation
+  const anchor = origin ?? deliveries[0]?.coordinate ?? currentLocation
   return anchor
     ? { center: anchor, zoom: 9.6, pitch: 42, bearing: -12 }
     : philippinesMapView
@@ -392,12 +431,12 @@ async function initializeMap() {
 
 onMounted(() => { void initializeMap() })
 watch(() => props.routes, () => {
-  draggedPoints.value = { origin: null, destination: null }
+  draggedPoints.value = { origin: null, destinations: {} }
 }, { deep: true })
-watch(() => [props.originCoordinates, props.destinationCoordinates], () => {
-  draggedPoints.value = { origin: null, destination: null }
+watch(() => [props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => {
+  draggedPoints.value = { origin: null, destinations: {} }
 }, { deep: true })
-watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.originCoordinates, props.destinationCoordinates], () => updateRoutes(), { deep: true })
+watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => updateRoutes(), { deep: true })
 onBeforeUnmount(() => {
   if (styleFailureTimer) window.clearTimeout(styleFailureTimer)
   markers.forEach(marker => marker.remove())
@@ -429,7 +468,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ originCoordinates || destinationCoordinates ? 'Drag the selected location pins to reposition pickup and delivery points.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
+    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
     <div class="map-legend" aria-label="Route color legend">
       <span><i class="legend-line legend-optimal"></i> Optimal route</span>
       <span><i class="legend-line legend-safer"></i> Safer route</span>

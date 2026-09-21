@@ -55,7 +55,7 @@ export function makeDemoRoutes(trip: TripInput, affectedRouteId?: string): Route
   const locationShift = isDefaultCorridor
     ? 0
     : 1 + [...locationText].reduce((total, char) => total + (char.codePointAt(0) ?? 0), 0) % 6
-  const vehicleTimeShift = trip.vehicle === 'Pickup' ? -2 : trip.vehicle === 'Medium truck' ? 7 : trip.vehicle === 'Small truck' ? 0 : 3
+  const vehicleTimeShift = trip.vehicle === 'Motorcycle' ? -6 : trip.vehicle === 'Pickup' ? -2 : trip.vehicle === 'Medium truck' ? 7 : trip.vehicle === 'Small truck' ? 0 : 3
   const loadDelta = trip.quantity - 250
   let roundedLoadSteps = loadDelta >= 0
     ? Math.floor(loadDelta / 250 + 0.5)

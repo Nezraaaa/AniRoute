@@ -49,7 +49,9 @@ async function loadRoutes(initial = false) {
   try {
     await Promise.all([
       resolveLocationCoordinates('origin'),
-      resolveLocationCoordinates('destination'),
+      ...(store.trip.deliveryPoints.length
+        ? store.trip.deliveryPoints.map((_, index) => resolveLocationCoordinates('destination', index))
+        : [resolveLocationCoordinates('destination')]),
     ])
     if (store.state.mode !== requestMode) return
     const result = await calculateRoutes({ ...store.trip }, requestMode)
@@ -80,44 +82,56 @@ function selectRoute(id: string) {
   store.state.selectedRouteId = id
 }
 
-function setPointCoordinates(field: 'origin' | 'destination', coordinates: Coordinates | null) {
+function syncDestinationCoordinateSummary() {
+  store.state.destinationCoordinates = store.state.deliveryPointCoordinates
+    .map(coordinate => coordinate)
+    .filter((coordinate): coordinate is Coordinates => Boolean(coordinate))
+    .at(-1) ?? null
+}
+
+function setPointCoordinates(field: 'origin' | 'destination', coordinates: Coordinates | null, index?: number) {
   if (field === 'origin') store.state.originCoordinates = coordinates
-  else store.state.destinationCoordinates = coordinates
+  else {
+    const pointIndex = index ?? Math.max(store.trip.deliveryPoints.length - 1, 0)
+    while (store.state.deliveryPointCoordinates.length <= pointIndex) store.state.deliveryPointCoordinates.push(null)
+    store.state.deliveryPointCoordinates[pointIndex] = coordinates
+    syncDestinationCoordinateSummary()
+  }
 }
 
 function handleLocationSelected(field: 'origin' | 'destination', index: number, location: LocationSuggestion) {
   if (location.latitude === null || location.longitude === null) {
-    setPointCoordinates(field, null)
+    setPointCoordinates(field, null, field === 'destination' ? index : undefined)
     return
   }
-  // The demo map has one draggable delivery endpoint. For multiple stops, use
-  // the last non-empty delivery point while the full list stays in the form.
-  const lastDestinationIndex = store.trip.deliveryPoints.reduce((last, point, pointIndex) => point.trim() ? pointIndex : last, -1)
-  if (field === 'destination' && index !== lastDestinationIndex) return
-  setPointCoordinates(field, { latitude: location.latitude, longitude: location.longitude })
+  setPointCoordinates(field, { latitude: location.latitude, longitude: location.longitude }, field === 'destination' ? index : undefined)
 }
 
 function handleLocationCleared(field: 'origin' | 'destination', index: number) {
-  const lastDestinationIndex = store.trip.deliveryPoints.reduce((last, point, pointIndex) => point.trim() ? pointIndex : last, -1)
-  if (field === 'destination' && index !== lastDestinationIndex) return
-  setPointCoordinates(field, null)
+  setPointCoordinates(field, null, field === 'destination' ? index : undefined)
 }
 
-async function resolveLocationCoordinates(field: 'origin' | 'destination') {
+async function resolveLocationCoordinates(field: 'origin' | 'destination', index?: number) {
   if (store.state.mode === 'demo') return
-  const currentCoordinates = field === 'origin' ? store.state.originCoordinates : store.state.destinationCoordinates
+  const currentCoordinates = field === 'origin'
+    ? store.state.originCoordinates
+    : index !== undefined
+      ? store.state.deliveryPointCoordinates[index]
+      : store.state.destinationCoordinates
   if (currentCoordinates) return
 
   const query = field === 'origin'
     ? store.trip.origin
-    : (store.trip.deliveryPoints.filter(point => point.trim()).at(-1) || store.trip.destination)
+    : index !== undefined
+      ? store.trip.deliveryPoints[index] || ''
+      : (store.trip.deliveryPoints.filter(point => point.trim()).at(-1) || store.trip.destination)
   if (query.trim().length < 2) return
 
   try {
     const suggestions = await searchLocations(query, undefined, 'live')
     const match = suggestions.find(location => location.latitude !== null && location.longitude !== null)
     if (match && match.latitude !== null && match.longitude !== null) {
-      setPointCoordinates(field, { latitude: match.latitude, longitude: match.longitude })
+      setPointCoordinates(field, { latitude: match.latitude, longitude: match.longitude }, index)
     }
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : 'Live location search is unavailable. Start the backend or switch to Demo mode.')
@@ -143,6 +157,12 @@ function editTrip() {
 onMounted(() => {
   void loadRoutes(true)
 })
+
+watch(() => store.trip.deliveryPoints.length, (count) => {
+  if (store.state.deliveryPointCoordinates.length > count) store.state.deliveryPointCoordinates.splice(count)
+  while (store.state.deliveryPointCoordinates.length < count) store.state.deliveryPointCoordinates.push(null)
+  syncDestinationCoordinateSummary()
+}, { immediate: true })
 
 watch(() => store.state.mode, (mode) => {
   generalError.value = ''
@@ -259,6 +279,7 @@ watch(() => store.state.mode, (mode) => {
             :trip="store.trip"
             :origin-coordinates="store.state.originCoordinates"
             :destination-coordinates="store.state.destinationCoordinates"
+            :delivery-point-coordinates="store.state.deliveryPointCoordinates"
             @point-dragged="setPointCoordinates"
           />
           <div class="selection-tip"><ArrowRight :size="16" aria-hidden="true" /> Choose any route above. The map follows your selection.</div>
