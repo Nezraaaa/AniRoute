@@ -1,12 +1,14 @@
 import type { RouteOption, TripInput } from '@/types/aniRoute'
 
 export const demoTrip: TripInput = {
-  crop: 'Tomatoes',
-  quantity: 250,
+  crop: '',
+  quantity: 0,
+  cropLoads: [],
   unit: 'kg',
   vehicle: 'Small truck',
   origin: '',
   destination: '',
+  deliveryPoints: [],
 }
 
 export const demoOrigins = [

@@ -74,15 +74,21 @@ function setPointCoordinates(field: 'origin' | 'destination', coordinates: Coord
   else store.state.destinationCoordinates = coordinates
 }
 
-function handleLocationSelected(field: 'origin' | 'destination', location: LocationSuggestion) {
+function handleLocationSelected(field: 'origin' | 'destination', index: number, location: LocationSuggestion) {
   if (location.latitude === null || location.longitude === null) {
     setPointCoordinates(field, null)
     return
   }
+  // The demo map has one draggable delivery endpoint. For multiple stops, use
+  // the last non-empty delivery point while the full list stays in the form.
+  const lastDestinationIndex = store.trip.deliveryPoints.reduce((last, point, pointIndex) => point.trim() ? pointIndex : last, -1)
+  if (field === 'destination' && index !== lastDestinationIndex) return
   setPointCoordinates(field, { latitude: location.latitude, longitude: location.longitude })
 }
 
-function handleLocationCleared(field: 'origin' | 'destination') {
+function handleLocationCleared(field: 'origin' | 'destination', index: number) {
+  const lastDestinationIndex = store.trip.deliveryPoints.reduce((last, point, pointIndex) => point.trim() ? pointIndex : last, -1)
+  if (field === 'destination' && index !== lastDestinationIndex) return
   setPointCoordinates(field, null)
 }
 
@@ -90,7 +96,9 @@ async function resolveLocationCoordinates(field: 'origin' | 'destination') {
   const currentCoordinates = field === 'origin' ? store.state.originCoordinates : store.state.destinationCoordinates
   if (currentCoordinates) return
 
-  const query = field === 'origin' ? store.trip.origin : store.trip.destination
+  const query = field === 'origin'
+    ? store.trip.origin
+    : (store.trip.deliveryPoints.filter(point => point.trim()).at(-1) || store.trip.destination)
   if (query.trim().length < 2) return
 
   try {
@@ -175,27 +183,15 @@ watch(() => store.state.mode, () => {
           </div>
         </Alert>
 
-        <p v-if="generalError" class="form-error-banner" role="alert">{{ generalError }}</p>
-
-        <div class="results-split">
-          <div class="map-column">
-            <RouteMap
-              :routes="store.routes"
-              :selected-route-id="store.state.selectedRouteId"
-              :trip="store.trip"
-              :origin-coordinates="store.state.originCoordinates"
-              :destination-coordinates="store.state.destinationCoordinates"
-              @point-dragged="setPointCoordinates"
-            />
-            <div class="selection-tip"><ArrowRight :size="16" aria-hidden="true" /> Choose any route below. The map follows your selection.</div>
+        <section class="route-choice-column" aria-labelledby="route-choice-heading">
+          <div class="route-choice-heading">
+            <div class="route-choice-copy">
+              <h3 id="route-choice-heading" class="route-choice-title">Choose a route</h3>
+              <span class="route-choice-subtitle">Expand a route to review details and choose it.</span>
+            </div>
           </div>
 
-          <section class="route-choice-column" aria-label="Available route choices">
-            <div class="route-choice-heading">
-              <div><h3>Choose a route</h3><p>All three choices are shown here.</p></div>
-              <span v-if="store.state.loadingRoutes" class="loading-inline" role="status">Updating…</span>
-            </div>
-
+          <div class="route-choice-panel">
             <Alert v-if="displayRoutes.length === 0" variant="warning" class="empty-routes">
               <Info :size="18" aria-hidden="true" />
               <div><strong>No routes found.</strong><p>Check your delivery details and try again.</p></div>
@@ -213,7 +209,21 @@ watch(() => store.state.mode, () => {
                 @use="useRoute"
               />
             </div>
-          </section>
+          </div>
+        </section>
+
+        <p v-if="generalError" class="form-error-banner" role="alert">{{ generalError }}</p>
+
+        <div class="map-column">
+          <RouteMap
+            :routes="store.routes"
+            :selected-route-id="store.state.selectedRouteId"
+            :trip="store.trip"
+            :origin-coordinates="store.state.originCoordinates"
+            :destination-coordinates="store.state.destinationCoordinates"
+            @point-dragged="setPointCoordinates"
+          />
+          <div class="selection-tip"><ArrowRight :size="16" aria-hidden="true" /> Choose any route above. The map follows your selection.</div>
         </div>
       </section>
     </div>

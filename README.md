@@ -75,8 +75,8 @@ The API accepts `CORS_ORIGINS` as a comma-separated environment variable. Its de
 
 ## Try the main flow
 
-1. The planner opens with an editable sample load: tomatoes, 250 kg, and small truck. Pickup and delivery are intentionally blank until you search and select locations.
-2. Type a pickup farm or delivery market. The backend returns location suggestions as you type; choose one to place its coordinates on the map. You can also drag the A and B location pins after they appear. Select **Find routes** to refresh the route estimates; the bundled route lines remain illustrative until a real road-routing engine is connected.
+1. The planner opens with blank crop and quantity fields plus a selectable vehicle. Enter the crop name and amount for the current delivery; pickup and delivery are blank until you search or enter locations.
+2. Type a pickup farm or delivery point. The backend returns location suggestions as you type; choose one to place its coordinates on the map. You can also drag the A and B location pins after they appear. Select **Find routes** to refresh the route estimates; the bundled route lines remain illustrative until a real road-routing engine is connected.
 3. Compare **Optimal**, **Safer**, and **Fastest** choices. Select a card to highlight it on the map, then choose **Use this route**.
 4. On the active route, allow camera and location access if available. Camera access is requested only after the route starts. The app says clearly when either permission is unavailable.
 5. The live model is not part of this demo. When the camera is on, a simulated finding appears automatically; click it to review the captured frame. **Not now** dismisses it without sending anything. **Confirm & upload** saves the simulated finding locally in the browser and asks the local demo route logic to recheck the route. The live camera stays mounted and resumes automatic sample detection after the finding is closed.

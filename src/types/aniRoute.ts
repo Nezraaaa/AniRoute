@@ -19,13 +19,20 @@ export interface LocationSuggestion {
   source: 'api' | 'local'
 }
 
+export interface CropLoad {
+  name: string
+  quantity: number
+}
+
 export interface TripInput {
   crop: string
   quantity: number
+  cropLoads: CropLoad[]
   unit: 'kg'
   vehicle: string
   origin: string
   destination: string
+  deliveryPoints: string[]
 }
 
 export interface HazardPin {

@@ -2,7 +2,11 @@ import { computed, reactive } from 'vue'
 import { demoTrip, makeDemoRoutes } from '@/data/demo'
 import type { Coordinates, DetectedHazard, RouteOption, TripInput } from '@/types/aniRoute'
 
-const trip = reactive<TripInput>({ ...demoTrip })
+const trip = reactive<TripInput>({
+  ...demoTrip,
+  cropLoads: demoTrip.cropLoads.map(crop => ({ ...crop })),
+  deliveryPoints: [...demoTrip.deliveryPoints],
+})
 const routes = reactive<RouteOption[]>(makeDemoRoutes(trip))
 const state = reactive({
   mode: 'demo' as 'demo' | 'live',
@@ -31,11 +35,30 @@ function replaceRoutes(next: RouteOption[]) {
 
 function validateTrip(): boolean {
   const errors: Record<string, string> = {}
-  if (!trip.crop.trim()) errors.crop = 'Choose a crop.'
-  if (!Number.isFinite(trip.quantity) || trip.quantity < 1) errors.quantity = 'Enter a load greater than 0 kg.'
+  const cropLoads = trip.cropLoads.length
+    ? trip.cropLoads
+    : trip.crop.trim()
+      ? [{ name: trip.crop, quantity: trip.quantity }]
+      : []
+  const deliveryPoints = trip.deliveryPoints.length
+    ? trip.deliveryPoints
+    : trip.destination.trim()
+      ? [trip.destination]
+      : []
+
+  if (!cropLoads.length) errors.crop = 'Add at least one crop type.'
+  cropLoads.forEach((crop, index) => {
+    if (!crop.name.trim()) errors[`crop-${index}`] = 'Enter a crop name.'
+    if (!Number.isFinite(crop.quantity) || crop.quantity < 1) errors[`crop-quantity-${index}`] = 'Enter an amount greater than 0 kg.'
+  })
+  const totalQuantity = cropLoads.reduce((total, crop) => total + (Number.isFinite(crop.quantity) ? crop.quantity : 0), 0)
+  if (cropLoads.length && totalQuantity > 100_000) errors.quantity = 'Total crop quantity cannot exceed 100,000 kg.'
   if (!trip.vehicle.trim()) errors.vehicle = 'Choose a vehicle.'
   if (!trip.origin.trim()) errors.origin = 'Enter the farm or pickup point.'
-  if (!trip.destination.trim()) errors.destination = 'Enter the market or delivery point.'
+  if (!deliveryPoints.length) errors.destination = 'Add at least one delivery point.'
+  deliveryPoints.forEach((point, index) => {
+    if (!point.trim()) errors[`destination-${index}`] = 'Enter a delivery point.'
+  })
   state.fieldErrors = errors
   return Object.keys(errors).length === 0
 }

@@ -19,8 +19,8 @@ Source-of-truth boundaries:
 
 ## Delivery planning
 
-- The demo starts with Tomatoes, 250 kg, and Small truck. Pickup and delivery fields intentionally start empty; the app does not invent default destinations.
-- Crop, load quantity, vehicle, pickup, and delivery fields have visible labels and inline validation.
+- The planner starts with empty crop and quantity fields plus a selectable vehicle. Pickup and delivery fields also start empty; the app does not invent default trip details or destinations.
+- Crop name, quantity, vehicle, pickup, and delivery fields have visible labels and inline validation. Crop and quantity are entered for each delivery instead of being limited to a fixed sample choice.
 - Pickup and delivery search provides debounced location suggestions through the backend geocoding adapter, with local sample fallbacks for the demo.
 - Selecting a location stores its coordinates and places a draggable A/B pin on the map. Clearing a field also clears its map coordinate.
 - **Find routes** validates the trip and calls the typed route adapter. Demo mode uses deterministic local sample routes; Live mode calls the configured API and may use a labeled sample fallback when enabled.
