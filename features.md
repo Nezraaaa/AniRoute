@@ -53,6 +53,7 @@ Source-of-truth boundaries:
 
 - A finding opens one responsive confirmation dialog with the hazard name, captured evidence frame, detected location when available, nearby destination, and approximate sample distance.
 - The dialog provides **Not now** and **Confirm & upload**. It does not add another upload form or a second submit step.
+- When the dialog opens, browser voice recognition starts automatically: saying **confirm**, **yes**, **save**, or **upload** follows the existing confirmation path, while **not now**, **cancel**, or **no** dismisses the finding. No voice button is required; manual buttons remain available as the fallback when browser speech recognition or microphone access is unavailable.
 - For the current simulated finding, confirmation stays in the browser through the local demo service path and does not call the backend.
 - A future non-simulated finding can pass through the Live hazard-confirmation adapter with its type, timestamp, confidence, GPS, route/segment IDs, and captured frame.
 - Successful confirmation triggers the route recheck flow. Demo confirmation and recheck stay local; Live confirmation/recheck call the backend only and report unavailable integration instead of falling back.

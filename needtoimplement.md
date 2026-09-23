@@ -7,6 +7,7 @@ This is the backend-only backlog for AniRoute. The frontend demo flow is intenti
 - Demo mode does not require the API for route calculation or simulated hazard confirmation.
 - Live route calculation calls the configured API only. The frontend rejects responses marked as demo data and shows an integration error until a real routing engine is connected.
 - The active camera demonstrates automatic simulated findings only in Demo mode. Live mode calls the scanner contract without creating sample findings; unavailable or demo-only capability is shown as an error.
+- Voice confirmation is a browser-side enhancement layered on top of the existing manual confirmation controls. It uses the browser Web Speech API when available and does not require a backend service; unsupported browsers and denied microphone access fall back to manual buttons.
 - A future non-simulated hazard can use the existing confirmation and recheck adapters once the backend returns real detections and accepts production observations.
 - The original frontend/product brief remains in [docs/aniroute_frontend_implementation_spec.md](docs/aniroute_frontend_implementation_spec.md). This file should stay focused on backend implementation and operations.
 

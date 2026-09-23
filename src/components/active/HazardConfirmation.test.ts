@@ -29,7 +29,7 @@ describe('HazardConfirmation', () => {
   it('dismisses without confirming or uploading the finding', async () => {
     const wrapper = makeDialog()
 
-    await wrapper.get('button').trigger('click')
+    await wrapper.get('[data-testid="hazard-dismiss-button"]').trigger('click')
 
     expect(wrapper.emitted('dismiss')).toHaveLength(1)
     expect(wrapper.emitted('confirm')).toBeUndefined()
@@ -38,7 +38,7 @@ describe('HazardConfirmation', () => {
   it('confirms and requests immediate upload in one action', async () => {
     const wrapper = makeDialog()
 
-    await wrapper.findAll('button')[1]!.trigger('click')
+    await wrapper.get('[data-testid="hazard-confirm-button"]').trigger('click')
 
     expect(wrapper.emitted('confirm')).toEqual([['data:image/png;base64,ZGVtby1mcmFtZQ==']])
     expect(wrapper.text()).toContain('Confirm & upload')
