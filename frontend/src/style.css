@@ -221,10 +221,10 @@ select.field-control {
 .empty-routes { margin: 0 0 12px; }
 .empty-routes > svg { flex: 0 0 auto; }
 .route-list { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
-.route-option { display: flex; height: auto; flex-direction: column; overflow: visible; opacity: .34; filter: saturate(.65); transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease, filter .16s ease; }
+.route-option { display: flex; height: auto; flex-direction: column; overflow: visible; opacity: .34; transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease; }
 .route-option:hover, .route-option:focus-within { border-color: #bfd4c1; box-shadow: 0 5px 18px rgba(24, 66, 39, .08); opacity: .7; }
-.route-option-selected { z-index: 2; border-color: #25724f; box-shadow: 0 0 0 2px rgba(39, 112, 78, .12); opacity: 1; filter: none; }
-.route-option-selected:hover, .route-option-selected:focus-within { border-color: #25724f; box-shadow: 0 5px 18px rgba(24, 66, 39, .12); opacity: 1; filter: none; }
+.route-option-selected { z-index: 2; border-color: #25724f; box-shadow: 0 0 0 2px rgba(39, 112, 78, .12); opacity: 1; }
+.route-option-selected:hover, .route-option-selected:focus-within { border-color: #25724f; box-shadow: 0 5px 18px rgba(24, 66, 39, .12); opacity: 1; }
 .route-select-button { position: relative; display: block; width: 100%; min-height: 90px; flex: none; padding: 15px; border: 0; color: inherit; background: transparent; text-align: left; }
 .route-select-button:hover { background: #fbfdfb; }
 .route-select-button:focus-visible { border-radius: 12px; }
