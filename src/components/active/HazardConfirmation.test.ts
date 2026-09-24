@@ -5,7 +5,7 @@ import type { DetectedHazard } from '@/types/aniRoute'
 
 const hazard: DetectedHazard = {
   id: 'sample-pothole', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
-  coordinates: { latitude: 6.42, longitude: 124.89 }, routeId: 'optimal',
+  coordinates: { latitude: 14.48, longitude: 121.02 }, routeId: 'optimal',
   roadSegmentId: 'optimal-segment-2', distanceAheadKm: 0.4, simulated: true,
 }
 
@@ -13,7 +13,7 @@ function makeDialog() {
   return mount(HazardConfirmation, {
     props: {
       open: true, hazard, detectedFrame: 'data:image/png;base64,ZGVtby1mcmFtZQ==', uploadStatus: 'idle', uploadMessage: '',
-      nearbyName: 'Koronadal trading post',
+      nearbyName: 'Calamba, Laguna trading post',
     },
     global: {
       stubs: {

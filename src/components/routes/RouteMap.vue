@@ -2,8 +2,9 @@
 import { computed, createVNode, onBeforeUnmount, onMounted, ref, render, shallowRef, watch } from 'vue'
 import type { GeoJSONSource, LayerSpecification, Map as MapInstance, Marker as MapMarker, StyleSpecification } from 'maplibre-gl'
 import { MapPin, Move } from '@lucide/vue'
+import { demoRouteGeometry } from '@/data/demo'
 import { appConfig, defaultCartoStyleUrl, withCartoBasemapKey } from '@/services/config'
-import type { Coordinates, RouteOption, TripInput } from '@/types/aniRoute'
+import type { Coordinates, RouteCategory, RouteOption, TripInput } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   routes: RouteOption[]
@@ -14,7 +15,8 @@ const props = withDefaults(defineProps<{
   destinationCoordinates?: Coordinates | null
   deliveryPointCoordinates?: Array<Coordinates | null>
   active?: boolean
-}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false })
+  prototypeRoutes?: boolean
+}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false, prototypeRoutes: false })
 
 const emit = defineEmits<{
   'point-dragged': [field: 'origin' | 'destination', coordinates: Coordinates, index?: number]
@@ -29,9 +31,17 @@ const draggedPoints = ref<{ origin: [number, number] | null; destinations: Recor
 let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
+let routeOverlay: SVGSVGElement | null = null
+let routeOverlayFrame: number | undefined
 
 const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e' }
-const hasDemoRoutes = computed(() => props.routes.some(route => route.source === 'demo' || route.source === 'local_demo'))
+const showPrototypeRoutes = computed(() => props.prototypeRoutes)
+const prototypeCategoryOrder: RouteCategory[] = ['optimal', 'safer', 'fastest']
+const routeLayerDefinitions = [
+  { category: 'optimal' as const, sourceId: 'route-optimal-source', casingId: 'route-optimal-casing', layerId: 'route-optimal', color: '#0b7a54', offset: 0 },
+  { category: 'safer' as const, sourceId: 'route-safer-source', casingId: 'route-safer-casing', layerId: 'route-safer', color: '#2563eb', offset: 0 },
+  { category: 'fastest' as const, sourceId: 'route-fastest-source', casingId: 'route-fastest-casing', layerId: 'route-fastest', color: '#e4572e', offset: 0 },
+]
 
 function cartoRasterStyle(): StyleSpecification {
   return {
@@ -65,14 +75,26 @@ function uniqueRoutes() {
   })
 }
 
+function routeLines(): Array<Pick<RouteOption, 'id' | 'category' | 'geometry' | 'source'>> {
+  if (!showPrototypeRoutes.value) return uniqueRoutes().filter(route => route.source === 'api')
+
+  const routes = uniqueRoutes()
+  return prototypeCategoryOrder.map(category => routes.find(route => route.category === category) ?? {
+    id: `prototype-${category}`,
+    category,
+    geometry: demoRouteGeometry[category],
+    source: 'demo' as const,
+  })
+}
+
 function routeGeoJson() {
-  if (!hasMapSelection.value) {
+  if (!hasMapSelection.value && !showPrototypeRoutes.value) {
     return { type: 'FeatureCollection' as const, features: [] }
   }
 
   return {
     type: 'FeatureCollection' as const,
-    features: uniqueRoutes().map(route => ({
+    features: routeLines().map(route => ({
       type: 'Feature' as const,
       properties: {
         routeId: route.id,
@@ -86,6 +108,11 @@ function routeGeoJson() {
   }
 }
 
+function routeGeoJsonFor(category: RouteCategory) {
+  const features = routeGeoJson().features.filter(feature => feature.properties.category === category)
+  return { type: 'FeatureCollection' as const, features }
+}
+
 function displayPlace(value: string, fallback: string) {
   return value.trim() || fallback
 }
@@ -97,6 +124,93 @@ const philippinesMapView = {
   zoom: 4.8,
   pitch: 46,
   bearing: -10,
+}
+
+const prototypeMapView = {
+  center: [120.9, 15.3] as MapPoint,
+  zoom: 6.2,
+  pitch: 34,
+  bearing: -8,
+}
+
+function removeRouteOverlay() {
+  if (routeOverlayFrame !== undefined) {
+    window.cancelAnimationFrame(routeOverlayFrame)
+    routeOverlayFrame = undefined
+  }
+  routeOverlay?.remove()
+  routeOverlay = null
+}
+
+function ensureRouteOverlay(instance: MapInstance) {
+  const canvasContainer = instance.getCanvasContainer()
+  if (!routeOverlay || routeOverlay.parentElement !== canvasContainer) {
+    routeOverlay?.remove()
+    routeOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    routeOverlay.classList.add('map-route-overlay')
+    routeOverlay.setAttribute('aria-hidden', 'true')
+    routeOverlay.setAttribute('focusable', 'false')
+    routeOverlay.style.pointerEvents = 'none'
+    routeOverlay.style.position = 'absolute'
+    routeOverlay.style.inset = '0'
+    routeOverlay.style.width = '100%'
+    routeOverlay.style.height = '100%'
+    routeOverlay.style.zIndex = '1'
+    canvasContainer.appendChild(routeOverlay)
+  }
+  return routeOverlay
+}
+
+function updateRouteOverlay() {
+  routeOverlayFrame = undefined
+  const instance = map.value
+  if (!instance || !mapReady.value || !showPrototypeRoutes.value) {
+    removeRouteOverlay()
+    return
+  }
+
+  const mapContainer = instance.getContainer()
+  const canvasRect = instance.getCanvas().getBoundingClientRect()
+  const overlay = ensureRouteOverlay(instance)
+  const width = Math.max(Math.round(canvasRect.width || mapContainer.clientWidth), 1)
+  const height = Math.max(Math.round(canvasRect.height || mapContainer.clientHeight), 1)
+  overlay.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  overlay.setAttribute('width', String(width))
+  overlay.setAttribute('height', String(height))
+  overlay.style.width = `${width}px`
+  overlay.style.height = `${height}px`
+
+  const groups = routeLines().map(route => {
+    const pathData = routeCoordinates(route)
+      .map((coordinate, index) => {
+        const point = instance.project(coordinate)
+        return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+      })
+      .join(' ')
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    casing.setAttribute('d', pathData)
+    casing.setAttribute('fill', 'none')
+    casing.setAttribute('stroke', '#ffffff')
+    casing.setAttribute('stroke-width', '17')
+    casing.setAttribute('stroke-linecap', 'round')
+    casing.setAttribute('stroke-linejoin', 'round')
+    line.setAttribute('d', pathData)
+    line.setAttribute('fill', 'none')
+    line.setAttribute('stroke', categoryColors[route.category] ?? '#0b7a54')
+    line.setAttribute('stroke-width', route.id === props.selectedRouteId ? '11' : '9')
+    line.setAttribute('stroke-linecap', 'round')
+    line.setAttribute('stroke-linejoin', 'round')
+    group.append(casing, line)
+    return group
+  })
+  overlay.replaceChildren(...groups)
+}
+
+function scheduleRouteOverlayUpdate() {
+  if (routeOverlayFrame !== undefined) return
+  routeOverlayFrame = window.requestAnimationFrame(updateRouteOverlay)
 }
 
 function pointFromCoordinates(value: Coordinates | null | undefined): MapPoint | null {
@@ -164,15 +278,18 @@ function routeThroughWaypoints(waypoints: MapPoint[], category: RouteOption['cat
   return path
 }
 
-function routeCoordinates(route: RouteOption): MapPoint[] {
-  const coordinates = route.geometry.coordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
+function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'source'>): MapPoint[] {
+  const baseCoordinates = showPrototypeRoutes.value && !hasMapSelection.value
+    ? demoRouteGeometry[route.category].coordinates
+    : route.geometry.coordinates
+  const coordinates = baseCoordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
   if (!coordinates.length) return coordinates
 
   const { origin } = selectedMapPoints()
   const waypoints = selectedWaypoints()
-  if (!waypoints.length) return []
+  if (!waypoints.length) return showPrototypeRoutes.value ? coordinates : []
 
-  if (route.source !== 'demo') return coordinates
+  if (!showPrototypeRoutes.value && route.source !== 'api') return []
 
   // Demo routes are illustrative: connect every selected stop in order so
   // points A, B, C and later stops remain visible in the route preview.
@@ -260,18 +377,21 @@ function createMarkers(shouldFitBounds = true) {
       .setLngLat([props.currentLocation.longitude, props.currentLocation.latitude]).addTo(instance))
   }
 
-  const boundPoints = uniqueRoutes().flatMap(route => routeCoordinates(route))
+  const boundPoints = (hasMapSelection.value || showPrototypeRoutes.value)
+    ? routeLines().flatMap(route => routeCoordinates(route))
+    : []
   if (origin) boundPoints.push(origin)
   destinations.forEach(({ coordinate }) => boundPoints.push(coordinate))
   if (props.currentLocation) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
-  if (!boundPoints.length || !shouldFitBounds) return
+  if (!boundPoints.length || !shouldFitBounds) {
+    scheduleRouteOverlayUpdate()
+    return
+  }
 
   const bounds = new LngLatBounds(boundPoints[0], boundPoints[0])
-  for (const routeOption of uniqueRoutes()) {
-    for (const point of routeCoordinates(routeOption)) bounds.extend(point)
-  }
-  if (props.currentLocation) bounds.extend([props.currentLocation.longitude, props.currentLocation.latitude])
-  if (shouldFitBounds) instance.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 250 })
+  for (const point of boundPoints) bounds.extend(point)
+  if (shouldFitBounds) instance.fitBounds(bounds, { padding: 72, maxZoom: showPrototypeRoutes.value && !hasMapSelection.value ? 7.5 : 14, duration: 250 })
+  scheduleRouteOverlayUpdate()
 }
 
 function resetToNeutralView(instance: MapInstance) {
@@ -282,6 +402,7 @@ function initialMapView() {
   const { origin, deliveries } = selectedMapPoints()
   const currentLocation = pointFromCoordinates(props.currentLocation)
   const anchor = origin ?? deliveries[0]?.coordinate ?? currentLocation
+  if (!anchor && showPrototypeRoutes.value) return prototypeMapView
   return anchor
     ? { center: anchor, zoom: 9.6, pitch: 42, bearing: -12 }
     : philippinesMapView
@@ -316,49 +437,41 @@ function add3dBuildings(instance: MapInstance) {
 }
 
 function addRouteLayers(instance: MapInstance) {
-  const routeSource = instance.getSource('route-lines') as GeoJSONSource | undefined
-  if (routeSource) {
-    routeSource.setData(routeGeoJson())
-  } else {
-    instance.addSource('route-lines', { type: 'geojson', data: routeGeoJson() })
+  for (const legacyLayerId of ['route-casing', 'route-strokes']) {
+    if (instance.getLayer(legacyLayerId)) instance.setLayoutProperty(legacyLayerId, 'visibility', 'none')
   }
-  if (!instance.getLayer('route-casing')) {
-    instance.addLayer({
-      id: 'route-casing', type: 'line', source: 'route-lines',
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-        'line-sort-key': ['get', 'sortOrder'],
-        visibility: 'visible',
-      },
-        paint: {
-          'line-color': '#ffffff',
-          'line-offset': ['match', ['get', 'category'], 'safer', 10, 'fastest', -10, 0],
-          'line-width': ['case', ['get', 'selected'], 15, 12],
-          'line-opacity': 0.98,
-        },
-    })
+
+  for (const routeLayer of routeLayerDefinitions) {
+    const data = routeGeoJsonFor(routeLayer.category)
+    const routeSource = instance.getSource(routeLayer.sourceId) as GeoJSONSource | undefined
+    if (routeSource) routeSource.setData(data)
+    else instance.addSource(routeLayer.sourceId, { type: 'geojson', data })
+
+    if (!instance.getLayer(routeLayer.casingId)) {
+      instance.addLayer({
+        id: routeLayer.casingId, type: 'line', source: routeLayer.sourceId,
+        minzoom: 0,
+        layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'visible' },
+        paint: { 'line-color': '#ffffff', 'line-offset': routeLayer.offset, 'line-width': 16, 'line-opacity': 1 },
+      })
+    }
+    if (!instance.getLayer(routeLayer.layerId)) {
+      instance.addLayer({
+        id: routeLayer.layerId, type: 'line', source: routeLayer.sourceId,
+        minzoom: 0,
+        layout: { 'line-cap': 'round', 'line-join': 'round', visibility: 'visible' },
+        paint: { 'line-color': routeLayer.color, 'line-offset': routeLayer.offset, 'line-width': 10, 'line-opacity': 1 },
+      })
+    }
   }
-  if (!instance.getLayer('route-strokes')) {
-    instance.addLayer({
-      id: 'route-strokes', type: 'line', source: 'route-lines',
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-        'line-sort-key': ['get', 'sortOrder'],
-        visibility: 'visible',
-      },
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-offset': ['match', ['get', 'category'], 'safer', 10, 'fastest', -10, 0],
-          'line-width': ['case', ['get', 'selected'], 9, 6],
-          'line-opacity': ['case', ['get', 'selected'], 1, 0.92],
-        },
-    })
-  }
+
   try {
-    instance.moveLayer('route-casing')
-    instance.moveLayer('route-strokes')
+    for (const routeLayer of routeLayerDefinitions) {
+      instance.setLayoutProperty(routeLayer.casingId, 'visibility', 'visible')
+      instance.setLayoutProperty(routeLayer.layerId, 'visibility', 'visible')
+      instance.moveLayer(routeLayer.casingId)
+      instance.moveLayer(routeLayer.layerId)
+    }
   } catch {
     // The route layers are already above the CARTO basemap in the normal style.
   }
@@ -371,6 +484,7 @@ function markStyleReady(instance: MapInstance) {
   add3dBuildings(instance)
   addRouteLayers(instance)
   createMarkers()
+  scheduleRouteOverlayUpdate()
 }
 
 function switchToRasterFallback(instance: MapInstance) {
@@ -391,10 +505,11 @@ function switchToRasterFallback(instance: MapInstance) {
 function updateRoutes(shouldFitBounds = true) {
   const instance = map.value
   if (!instance || !mapReady.value) return
-  const source = instance.getSource('route-lines') as GeoJSONSource | undefined
-  source?.setData(routeGeoJson())
+  addRouteLayers(instance)
+  instance.triggerRepaint()
   createMarkers(shouldFitBounds)
-  if (!hasMapSelection.value && !props.currentLocation) resetToNeutralView(instance)
+  scheduleRouteOverlayUpdate()
+  if (!hasMapSelection.value && !props.currentLocation && !showPrototypeRoutes.value) resetToNeutralView(instance)
 }
 
 async function initializeMap() {
@@ -417,7 +532,14 @@ async function initializeMap() {
     })
     map.value = instance
     instance.addControl(new NavigationControl({ showCompass: true }), 'top-right')
-    instance.on('style.load', () => markStyleReady(instance))
+    const syncMapLayers = () => markStyleReady(instance)
+    instance.on('style.load', syncMapLayers)
+    instance.on('load', syncMapLayers)
+    instance.on('move', scheduleRouteOverlayUpdate)
+    instance.on('resize', scheduleRouteOverlayUpdate)
+    instance.on('zoom', scheduleRouteOverlayUpdate)
+    instance.on('rotate', scheduleRouteOverlayUpdate)
+    instance.on('pitch', scheduleRouteOverlayUpdate)
     instance.on('error', () => {
       if (!mapReady.value) switchToRasterFallback(instance)
     })
@@ -436,9 +558,10 @@ watch(() => props.routes, () => {
 watch(() => [props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => {
   draggedPoints.value = { origin: null, destinations: {} }
 }, { deep: true })
-watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => updateRoutes(), { deep: true })
+watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates, props.prototypeRoutes], () => updateRoutes(), { deep: true })
 onBeforeUnmount(() => {
   if (styleFailureTimer) window.clearTimeout(styleFailureTimer)
+  removeRouteOverlay()
   markers.forEach(marker => marker.remove())
   map.value?.remove()
   map.value = null
@@ -460,7 +583,7 @@ onBeforeUnmount(() => {
         <span>Route choices remain available below.</span>
       </div>
       <div v-if="!unavailable && !mapReady" class="map-loading" role="status">Loading map…</div>
-      <div v-if="!unavailable && mapReady && !hasMapSelection && !currentLocation" class="map-empty-state" role="status">
+      <div v-if="!unavailable && mapReady && !hasMapSelection && !currentLocation && !showPrototypeRoutes" class="map-empty-state" role="status">
         <MapPin :size="19" aria-hidden="true" />
         <div>
           <strong>Choose pickup and delivery points</strong>
@@ -468,16 +591,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
+    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : showPrototypeRoutes ? 'Prototype route lines are shown for layout testing. Select locations to place draggable pins.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
     <div class="map-legend" aria-label="Route color legend">
-      <span><i class="legend-line legend-optimal"></i> Optimal route</span>
+      <span><i class="legend-line legend-optimal"></i> Recommended route</span>
       <span><i class="legend-line legend-safer"></i> Safer route</span>
       <span><i class="legend-line legend-fastest"></i> Fastest route</span>
     </div>
     <p class="map-attribution map-attribution-links">
       &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>
       &middot; &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-      &middot; {{ hasDemoRoutes ? 'Sample route lines; live road directions are not connected.' : 'Live road directions are supplied by the backend.' }}
+      &middot; {{ showPrototypeRoutes ? 'Prototype route lines; live road directions are not connected.' : 'Live road directions are supplied by the backend.' }}
     </p>
   </section>
 </template>

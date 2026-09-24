@@ -300,6 +300,7 @@ onBeforeUnmount(() => {
         <RouteMap
           :routes="store.routes"
           :selected-route-id="store.state.activeRouteId ?? ''"
+          :prototype-routes="store.state.mode === 'demo'"
           :trip="store.trip"
           :current-location="currentLocation"
           :origin-coordinates="store.state.originCoordinates"

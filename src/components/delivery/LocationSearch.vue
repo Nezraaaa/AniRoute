@@ -39,12 +39,12 @@ let searchTimer: number | undefined
 let requestController: AbortController | undefined
 
 const localPlaceCoordinates: Record<string, Coordinates> = {
-  'Farm pickup point, Tupi': { latitude: 6.359, longitude: 124.957 },
-  'Polomolok farm gate': { latitude: 6.221, longitude: 125.058 },
-  'Tampakan collection point': { latitude: 6.49, longitude: 124.93 },
-  'Koronadal trading post': { latitude: 6.503, longitude: 124.852 },
-  'General Santos public market': { latitude: 6.116, longitude: 125.171 },
-  'Tupi consolidation center': { latitude: 6.334, longitude: 124.952 },
+  'Baguio farm pickup point': { latitude: 16.402, longitude: 120.596 },
+  'La Trinidad farm gate': { latitude: 16.455, longitude: 120.588 },
+  'Tuba collection point': { latitude: 16.322, longitude: 120.596 },
+  'Calamba, Laguna trading post': { latitude: 14.2117, longitude: 121.1653 },
+  'Santa Rosa, Laguna public market': { latitude: 14.3122, longitude: 121.1114 },
+  'Los Baños, Laguna consolidation center': { latitude: 14.1709, longitude: 121.2411 },
 }
 
 const listId = computed(() => `${props.id}-location-list`)

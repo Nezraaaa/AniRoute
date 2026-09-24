@@ -18,7 +18,7 @@ describe('route service adapter', () => {
     const baseline = makeDemoRoutes(demoTrip)
     const edited = makeDemoRoutes({
       ...demoTrip, crop: 'Leafy vegetables', quantity: 500, vehicle: 'Medium truck',
-      origin: 'Polomolok farm gate', destination: 'General Santos public market',
+      origin: 'Baguio farm pickup point', destination: 'Calamba, Laguna trading post',
     })
 
     expect(edited[0]?.travelTimeMinutes).toBeGreaterThan(baseline[0]!.travelTimeMinutes)
@@ -41,7 +41,7 @@ describe('route service adapter', () => {
   it('maps route categories and explanations from the backend', async () => {
     const route = {
       route_id: 'optimal', category: 'optimal',
-      geometry: { type: 'LineString', coordinates: [[124.9, 6.4], [124.8, 6.5]] },
+      geometry: { type: 'LineString', coordinates: [[120.596, 16.402], [121.17, 14.21]] },
       travel_time_minutes: 52, distance_km: 30.2,
       road_condition_summary: 'Mostly smooth', weather_flood_summary: 'Low sample exposure', temperature_exposure_summary: 'Mild sample exposure',
       crop_risk_score: 25, crop_risk_label: 'lower', explanation: 'Balances this trip.',
@@ -83,7 +83,7 @@ describe('route service adapter', () => {
   it('uses the recalculation endpoint after a hazard confirmation', async () => {
     const safer = {
       route_id: 'safer', category: 'safer',
-      geometry: { type: 'LineString', coordinates: [[124.9, 6.4], [124.8, 6.5]] },
+      geometry: { type: 'LineString', coordinates: [[120.596, 16.402], [121.17, 14.21]] },
       travel_time_minutes: 66, distance_km: 37.8,
       road_condition_summary: 'Fewer rough sections', weather_flood_summary: 'Lower sample exposure', temperature_exposure_summary: 'Lower sample exposure',
       crop_risk_score: 20, crop_risk_label: 'lower', explanation: 'Lower known risk.',
@@ -112,9 +112,9 @@ describe('hazard service adapter', () => {
     vi.stubGlobal('fetch', fetchMock)
     const frame = 'data:image/jpeg;base64,/9j/AA=='
 
-    expect(await scanCameraFrame('optimal', frame, { latitude: 6.42, longitude: 124.89 })).toBeNull()
+    expect(await scanCameraFrame('optimal', frame, { latitude: 14.48, longitude: 121.02 })).toBeNull()
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
-      route_id: 'optimal', frame_data_url: frame, latitude: 6.42, longitude: 124.89,
+      route_id: 'optimal', frame_data_url: frame, latitude: 14.48, longitude: 121.02,
     })
   })
 
@@ -129,7 +129,7 @@ describe('hazard service adapter', () => {
   it('sends the geotag and evidence only when confirmation is called', async () => {
     const hazard: DetectedHazard = {
       id: 'sample-1', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
-      coordinates: { latitude: 6.42, longitude: 124.89 }, routeId: 'optimal',
+      coordinates: { latitude: 14.48, longitude: 121.02 }, routeId: 'optimal',
       roadSegmentId: 'optimal-segment-2', distanceAheadKm: 0.4, simulated: false,
     }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
@@ -142,7 +142,7 @@ describe('hazard service adapter', () => {
 
     const payload = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
     expect(payload).toMatchObject({
-      hazard_type: 'pothole', latitude: 6.42, longitude: 124.89,
+      hazard_type: 'pothole', latitude: 14.48, longitude: 121.02,
       route_id: 'optimal', road_segment_id: 'optimal-segment-2', simulated: false,
     })
     expect(payload.evidence_frame_data_url).toBe('data:image/jpeg;base64,aGVsbG8=')
@@ -166,7 +166,7 @@ describe('hazard service adapter', () => {
   it('does not label a rejected backend upload as successful', async () => {
     const hazard: DetectedHazard = {
       id: 'sample-2', type: 'pothole', detectedAt: '2026-09-20T12:30:00.000Z',
-      coordinates: { latitude: 6.42, longitude: 124.89 }, routeId: 'optimal',
+      coordinates: { latitude: 14.48, longitude: 121.02 }, routeId: 'optimal',
       roadSegmentId: 'optimal-segment-2', simulated: false,
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Evidence frame is too large.' }, false)))

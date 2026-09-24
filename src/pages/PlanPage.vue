@@ -276,6 +276,7 @@ watch(() => store.state.mode, (mode) => {
           <RouteMap
             :routes="store.routes"
             :selected-route-id="store.state.selectedRouteId"
+            :prototype-routes="store.state.mode === 'demo'"
             :trip="store.trip"
             :origin-coordinates="store.state.originCoordinates"
             :destination-coordinates="store.state.destinationCoordinates"

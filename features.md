@@ -33,7 +33,7 @@ Source-of-truth boundaries:
 - Each route has a large **Use this route** action. Selecting a card highlights its line on the map.
 - Duplicate route geometry is grouped into one displayed option with category badges.
 - MapLibre uses the keyed CARTO Voyager raster basemap with CARTO and OpenStreetMap attribution. The empty state is centered over the Philippines with a pitched 3D presentation so the Luzon-Visayas-Mindanao region is visible.
-- The map no longer defaults to Mindanao, creates pickup/delivery pins, or draws the sample route corridor before a pickup or delivery coordinate is selected.
+- The map starts without default pickup/delivery pins. Demo mode shows three clearly labeled Baguio-to-Laguna prototype route lines for layout testing; Live mode only renders route geometry supplied by the backend.
 - Once locations are selected, Demo route lines connect the pickup and each delivery stop in order; Live route geometry is used as returned by the backend. The A/B/C and later pins can be dragged to update their coordinates.
 - The map header has no CARTO Voyager badge. The Ctrl+scroll cooperative-gesture prompt is disabled.
 - The map displays route line colors, navigation controls, selected-route emphasis, a clean empty state, and a map-unavailable fallback. Sample road-note pins and the road-note legend item are not rendered on the map.

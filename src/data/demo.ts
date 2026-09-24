@@ -1,4 +1,4 @@
-import type { RouteOption, TripInput } from '@/types/aniRoute'
+import type { LineGeometry, RouteCategory, RouteOption, TripInput } from '@/types/aniRoute'
 
 export const demoTrip: TripInput = {
   crop: '',
@@ -12,37 +12,50 @@ export const demoTrip: TripInput = {
 }
 
 export const demoOrigins = [
-  'Farm pickup point, Tupi',
-  'Polomolok farm gate',
-  'Tampakan collection point',
+  'Baguio farm pickup point',
+  'La Trinidad farm gate',
+  'Tuba collection point',
 ]
 
 export const demoDestinations = [
-  'Koronadal trading post',
-  'General Santos public market',
-  'Tupi consolidation center',
+  'Calamba, Laguna trading post',
+  'Santa Rosa, Laguna public market',
+  'Los Baños, Laguna consolidation center',
 ]
 
 const demoHazard = {
   id: 'demo-standing-water',
   name: 'Standing water',
-  coordinates: { latitude: 6.428, longitude: 124.895 },
+  coordinates: { latitude: 14.48, longitude: 121.02 },
   note: 'Sample road note · demo only',
 }
 
-const lines = {
-  optimal: [
-    [124.957, 6.359], [124.942, 6.382], [124.925, 6.406],
-    [124.904, 6.431], [124.882, 6.463], [124.858, 6.493], [124.852, 6.503],
-  ] as [number, number][],
-  safer: [
-    [124.957, 6.359], [124.944, 6.378], [124.934, 6.402],
-    [124.915, 6.432], [124.892, 6.462], [124.870, 6.486], [124.852, 6.503],
-  ] as [number, number][],
-  fastest: [
-    [124.957, 6.359], [124.939, 6.378], [124.922, 6.405],
-    [124.900, 6.431], [124.881, 6.461], [124.862, 6.488], [124.852, 6.503],
-  ] as [number, number][],
+/** Three frontend-only alternatives for the Baguio-to-Laguna prototype corridor. */
+export const demoRouteGeometry: Record<RouteCategory, LineGeometry> = {
+  optimal: {
+    type: 'LineString',
+    coordinates: [
+      [120.596, 16.402], [120.57, 16.17], [120.68, 15.85],
+      [120.72, 15.47], [120.86, 15.10], [120.96, 14.72],
+      [121.03, 14.48], [121.17, 14.21],
+    ],
+  },
+  safer: {
+    type: 'LineString',
+    coordinates: [
+      [120.596, 16.402], [120.62, 16.18], [120.78, 15.87],
+      [120.92, 15.50], [121.02, 15.12], [121.16, 14.76],
+      [121.28, 14.40], [121.18, 14.21],
+    ],
+  },
+  fastest: {
+    type: 'LineString',
+    coordinates: [
+      [120.596, 16.402], [120.54, 16.12], [120.60, 15.77],
+      [120.72, 15.39], [120.89, 15.02], [121.03, 14.68],
+      [121.11, 14.39], [121.17, 14.21],
+    ],
+  },
 }
 
 export function makeDemoRoutes(trip: TripInput, affectedRouteId?: string): RouteOption[] {
@@ -70,21 +83,21 @@ export function makeDemoRoutes(trip: TripInput, affectedRouteId?: string): Route
   const riskLabel = (score: number) => score >= 60 ? 'higher' : score >= 35 ? 'moderate' : 'lower'
   const routes: RouteOption[] = [
     {
-      id: 'optimal', category: 'optimal', geometry: { type: 'LineString', coordinates: lines.optimal },
+      id: 'optimal', category: 'optimal', geometry: demoRouteGeometry.optimal,
       travelTimeMinutes: 54 + timeShift, distanceKm: 32.4 + distanceShift, roadConditionSummary: 'Mostly smooth road',
       weatherFloodSummary: 'Some rain exposure · no live forecast', temperatureSummary: 'Mild exposure · sample only', cropRiskScore: 28 + cropShift + loadRiskShift + vehicleRiskShift,
       cropRiskLabel: riskLabel(28 + cropShift + loadRiskShift + vehicleRiskShift), explanation: 'Balances travel time, distance, road condition, sample weather, temperature and crop sensitivity.',
       recommended: true, knownHazards: [], source: 'demo',
     },
     {
-      id: 'safer', category: 'safer', geometry: { type: 'LineString', coordinates: lines.safer },
+      id: 'safer', category: 'safer', geometry: demoRouteGeometry.safer,
       travelTimeMinutes: 66 + timeShift, distanceKm: 37.8 + distanceShift, roadConditionSummary: 'Fewer known rough sections',
       weatherFloodSummary: 'Lower sample flood exposure', temperatureSummary: 'Lower heat exposure · sample', cropRiskScore: 18 + cropShift + loadRiskShift + vehicleRiskShift,
       cropRiskLabel: riskLabel(18 + cropShift + loadRiskShift + vehicleRiskShift), explanation: 'Takes longer but has lower known road and flood risk in this sample.',
       recommended: false, knownHazards: [], source: 'demo',
     },
     {
-      id: 'fastest', category: 'fastest', geometry: { type: 'LineString', coordinates: lines.fastest },
+      id: 'fastest', category: 'fastest', geometry: demoRouteGeometry.fastest,
       travelTimeMinutes: 43 + timeShift, distanceKm: 28.7 + distanceShift, roadConditionSummary: 'One rough road section',
       weatherFloodSummary: 'Standing water noted · sample only', temperatureSummary: 'Higher afternoon heat exposure · sample', cropRiskScore: Math.min(95, 63 + cropShift + loadRiskShift + vehicleRiskShift),
       cropRiskLabel: riskLabel(Math.min(95, 63 + cropShift + loadRiskShift + vehicleRiskShift)), explanation: 'Shortest estimated drive time, with a sample standing-water concern.',
