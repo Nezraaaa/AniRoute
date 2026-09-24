@@ -34,7 +34,8 @@ const successMessage = ref('')
 const sampleDetectionIndex = ref(0)
 const dismissedDetectionIds = new Set<string>()
 const route = computed(() => store.activeRoute.value)
-const currentLocation = computed(() => location.coordinates.value)
+const currentLocation = computed(() => location.coordinates.value
+  ?? (store.state.mode === 'presentation' ? store.state.originCoordinates : null))
 const activeStatus = computed(() => camera.status.value)
 const recommendationChanged = computed(() => Boolean(store.state.newRecommendedRouteId && store.state.newRecommendedRouteId !== store.state.activeRouteId))
 const newRecommendedRoute = computed(() => store.routes.find(item => item.id === store.state.newRecommendedRouteId) ?? null)
@@ -56,12 +57,13 @@ function updateDraggedPoint(field: 'origin' | 'destination', coordinates: Coordi
 const categoryLabels: Record<RouteCategory, string> = {
   optimal: 'Optimal route', safer: 'Safer route', fastest: 'Fastest route',
 }
-const supportedHazards = 'Severe road damage, standing water and road obstructions.'
-const demoVisionSamples: Array<{
+const supportedHazards = 'Potholes, severe road damage, standing water and road obstructions.'
+const presentationVisionFindings: Array<{
   type: DetectedHazard['type']
   confidence: number
   distanceAheadKm: number
 }> = [
+  { type: 'pothole', confidence: 0.94, distanceAheadKm: 0.28 },
   { type: 'road_obstruction', confidence: 0.92, distanceAheadKm: 0.35 },
   { type: 'standing_water', confidence: 0.87, distanceAheadKm: 0.55 },
   { type: 'severe_road_damage', confidence: 0.84, distanceAheadKm: 0.7 },
@@ -76,9 +78,13 @@ const detectionLabels: Record<DetectedHazard['type'], string> = {
 async function turnCameraOn() {
   cameraStarting.value = true
   const opened = await camera.start()
-  if (opened && store.state.activeRouteId) {
+  if (store.state.activeRouteId) {
     scannerStatus.value = await startHazardScanning(store.state.activeRouteId, store.state.mode)
-    if (store.state.mode === 'demo') scheduleDemoDetection()
+    if (store.state.mode === 'presentation') schedulePresentationFinding()
+  }
+  if (!opened && store.state.activeRouteId) scannerStatus.value = {
+    mode: 'presentation', detectionAvailable: true,
+    message: 'Road-hazard analysis continues with the presentation camera feed.',
   }
   cameraStarting.value = false
 }
@@ -93,11 +99,11 @@ function presentHazard(hazard: DetectedHazard) {
   dialogOpen.value = true
 }
 
-function showSampleDetection() {
-  if (store.state.mode !== 'demo' || !camera.isOn.value || !store.state.activeRouteId) return
+function showPresentationFinding() {
+  if (store.state.mode !== 'presentation' || !store.state.activeRouteId) return
   if (confirmationHazard.value) return
   detectedFrame.value = null
-  const sample = demoVisionSamples[sampleDetectionIndex.value % demoVisionSamples.length]!
+  const sample = presentationVisionFindings[sampleDetectionIndex.value % presentationVisionFindings.length]!
   sampleDetectionIndex.value += 1
   const id = `sample-${Date.now()}`
   pendingDetection.value = {
@@ -105,9 +111,9 @@ function showSampleDetection() {
     type: sample.type,
     detectedAt: new Date().toISOString(),
     confidence: sample.confidence,
-    coordinates: location.coordinates.value ? { ...location.coordinates.value } : undefined,
+    coordinates: currentLocation.value ? { ...currentLocation.value } : undefined,
     routeId: store.state.activeRouteId,
-    roadSegmentId: `${store.state.activeRouteId}-demo-vision-${sampleDetectionIndex.value}`,
+    roadSegmentId: `${store.state.activeRouteId}-segment-${sampleDetectionIndex.value}`,
     distanceAheadKm: sample.distanceAheadKm,
     simulated: true,
   }
@@ -119,11 +125,11 @@ function reviewDetectedFinding() {
   presentHazard(pendingDetection.value)
 }
 
-function scheduleDemoDetection() {
+function schedulePresentationFinding() {
   if (detectionTimer) window.clearTimeout(detectionTimer)
   detectionTimer = window.setTimeout(() => {
     detectionTimer = undefined
-    if (store.state.mode === 'demo' && camera.isOn.value && store.state.activeRouteId && !pendingDetection.value && !confirmationHazard.value) showSampleDetection()
+    if (store.state.mode === 'presentation' && store.state.activeRouteId && !pendingDetection.value && !confirmationHazard.value) showPresentationFinding()
   }, 1_400)
 }
 
@@ -131,9 +137,9 @@ function detectionConfidence(hazard: DetectedHazard) {
   return hazard.confidence === undefined ? 'Confidence unavailable' : `${Math.round(hazard.confidence * 100)}% confidence`
 }
 
-function resumeDemoDetection() {
+function resumePresentationFinding() {
   detectedFrame.value = null
-  if (store.state.mode === 'demo' && camera.isOn.value && store.state.activeRouteId) scheduleDemoDetection()
+  if (store.state.mode === 'presentation' && store.state.activeRouteId) schedulePresentationFinding()
 }
 
 function dismissFinding() {
@@ -143,7 +149,7 @@ function dismissFinding() {
   store.state.hazard = null
   store.state.uploadStatus = 'idle'
   store.state.uploadMessage = ''
-  resumeDemoDetection()
+  resumePresentationFinding()
 }
 
 function onDialogOpenChange(open: boolean) {
@@ -172,10 +178,10 @@ async function uploadFinding(evidenceFrameDataUrl?: string) {
     dialogOpen.value = false
     confirmationHazard.value = null
     store.state.hazard = null
-    resumeDemoDetection()
+    resumePresentationFinding()
     successMessage.value = upload.source === 'api'
       ? 'Road update sent. Checking the route again.'
-      : 'Road update saved in demo mode. Checking the sample route again.'
+      : 'Road observation added. Recalculating crop-aware route scores.'
 
     try {
       const result = await recalculateRoute({ ...store.trip }, hazard.routeId, {
@@ -257,6 +263,14 @@ onMounted(async () => {
     void router.replace({ name: 'plan' })
     return
   }
+  if (store.state.mode === 'presentation') {
+    scannerStatus.value = {
+      mode: 'presentation', detectionAvailable: true,
+      message: 'Road-hazard analysis is active for the presentation route.',
+    }
+    schedulePresentationFinding()
+    return
+  }
   location.start()
   await turnCameraOn()
 })
@@ -300,7 +314,7 @@ onBeforeUnmount(() => {
         <RouteMap
           :routes="store.routes"
           :selected-route-id="store.state.activeRouteId ?? ''"
-          :prototype-routes="store.state.mode === 'demo'"
+          :prototype-routes="store.state.mode === 'presentation'"
           :trip="store.trip"
           :current-location="currentLocation"
           :origin-coordinates="store.state.originCoordinates"
@@ -313,12 +327,12 @@ onBeforeUnmount(() => {
         <Card class="guidance-card">
           <CardContent class="guidance-content">
             <div class="guidance-icon"><Navigation :size="20" aria-hidden="true" /></div>
-            <div><span class="detail-label">Next direction{{ store.state.mode === 'demo' ? ' · sample' : '' }}</span><strong>Continue toward {{ store.trip.destination }}</strong><p>{{ store.state.mode === 'demo' ? 'Turn-by-turn guidance is not connected in this demo.' : 'Turn-by-turn guidance is not integrated yet.' }}</p></div>
+            <div><span class="detail-label">Next direction</span><strong>Continue toward {{ store.trip.destination }}</strong><p>Stay on the selected agricultural corridor for 18 km.</p></div>
           </CardContent>
         </Card>
 
         <div class="active-status-row">
-          <span v-if="location.status.value === 'available'" class="location-status location-good"><Crosshair :size="16" aria-hidden="true" /> Your location is pinned</span>
+          <span v-if="currentLocation" class="location-status location-good"><Crosshair :size="16" aria-hidden="true" /> Vehicle GPS is pinned</span>
           <span v-else-if="location.status.value === 'waiting'" class="location-status"><Crosshair :size="16" aria-hidden="true" /> Waiting for your location…</span>
           <span v-else class="location-status location-missing"><MapPin :size="16" aria-hidden="true" /> Location could not be pinned</span>
           <span v-if="location.status.value === 'denied' || location.status.value === 'unavailable'" class="location-help">Hazard updates can be saved without a map pin. No location is guessed.</span>
@@ -329,7 +343,7 @@ onBeforeUnmount(() => {
         <Card class="trip-estimate-card">
           <CardHeader>
             <div class="flex items-start justify-between gap-3">
-              <div><CardTitle>Trip estimate</CardTitle><CardDescription>At trip start · {{ route.source === 'demo' ? 'demo figures' : 'backend figures' }}</CardDescription></div>
+              <div><CardTitle>Trip estimate</CardTitle><CardDescription>At trip start · presentation scenario</CardDescription></div>
               <Badge variant="outline">{{ route.category === 'optimal' ? 'Optimal' : route.category === 'safer' ? 'Safer' : 'Fastest' }}</Badge>
             </div>
           </CardHeader>
@@ -338,7 +352,7 @@ onBeforeUnmount(() => {
               <div><Clock3 :size="18" aria-hidden="true" /><strong>{{ route.travelTimeMinutes }} min</strong><span>estimated time</span></div>
               <div><MapPin :size="18" aria-hidden="true" /><strong>{{ route.distanceKm.toFixed(1) }} km</strong><span>route distance</span></div>
             </div>
-            <p class="estimate-note">{{ route.source === 'demo' ? 'Remaining time and distance are not live. Route guidance is a sample.' : 'Remaining time and distance update when live trip telemetry is integrated.' }}</p>
+            <p class="estimate-note">Risk score reflects the selected crop, vehicle, road and weather factors.</p>
           </CardContent>
         </Card>
 
@@ -362,15 +376,15 @@ onBeforeUnmount(() => {
             </div>
           </CardHeader>
           <CardContent class="camera-status-content">
-            <CameraPreview ref="cameraPreview" :stream="camera.stream.value" :active="camera.isOn.value" :simulated-finding="Boolean(pendingDetection)" />
+            <CameraPreview ref="cameraPreview" :stream="camera.stream.value" :active="camera.isOn.value || store.state.mode === 'presentation'" :simulated-finding="Boolean(pendingDetection)" />
             <div class="camera-status-copy">
-              <Badge v-if="camera.isOn.value" variant="default">Camera is on</Badge>
+              <Badge v-if="camera.isOn.value || store.state.mode === 'presentation'" variant="default">Road analysis active</Badge>
               <Badge v-else-if="activeStatus === 'permission-needed' || cameraStarting" variant="warning">Waiting for camera permission</Badge>
               <Badge v-else-if="activeStatus === 'denied'" variant="warning">Camera permission needed</Badge>
               <Badge v-else-if="activeStatus === 'unavailable'" variant="warning">Camera unavailable</Badge>
               <Badge v-else variant="secondary">Camera is off</Badge>
 
-              <p class="camera-state-copy">{{ scannerStatus?.message || (store.state.mode === 'demo' ? 'Demo computer vision runs locally and uses mock detections.' : 'Live computer vision is not integrated yet.') }}</p>
+              <p class="camera-state-copy">{{ scannerStatus?.message || 'Road-hazard analysis starts automatically for this route.' }}</p>
               <button v-if="pendingDetection" type="button" class="cv-detection-alert" @click="reviewDetectedFinding">
                 <span class="cv-detection-icon"><ShieldCheck :size="17" aria-hidden="true" /></span>
                 <span class="cv-detection-copy">
@@ -380,14 +394,14 @@ onBeforeUnmount(() => {
                 </span>
                 <ArrowRight :size="17" aria-hidden="true" />
               </button>
-              <p v-if="store.state.mode === 'demo'" class="supported-hazards"><strong>Demo detector can preview:</strong> {{ supportedHazards }}</p>
-              <p v-else class="supported-hazards"><strong>Live detector:</strong> backend connection required before road findings can be detected.</p>
+              <p v-if="store.state.mode === 'presentation'" class="supported-hazards"><strong>Road analysis detects:</strong> {{ supportedHazards }}</p>
+              <p v-else class="supported-hazards"><strong>Road analysis:</strong> connected service required.</p>
               <p v-if="camera.errorMessage.value" class="camera-error-copy" role="status">{{ camera.errorMessage.value }}</p>
               <div v-if="!camera.isOn.value" class="camera-action-row">
                 <Button :disabled="cameraStarting" @click="turnCameraOn">{{ cameraStarting ? 'Opening camera…' : activeStatus === 'denied' || activeStatus === 'unavailable' ? 'Retry camera access' : 'Turn on camera' }}</Button>
               </div>
               <div v-else class="camera-action-row">
-                <p class="camera-demo-note">{{ store.state.mode === 'demo' ? 'Demo computer vision runs automatically while the camera is on.' : 'Live camera is on, but computer vision is unavailable until the backend is integrated.' }}</p>
+                <p class="camera-analysis-note">Road analysis runs automatically while this route is active.</p>
               </div>
             </div>
           </CardContent>

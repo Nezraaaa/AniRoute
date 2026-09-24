@@ -1,13 +1,13 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import RouteOptionCard from './RouteOptionCard.vue'
-import { demoTrip, makeDemoRoutes } from '@/data/demo'
+import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
 
 describe('RouteOptionCard', () => {
   it('lets the user show a route and start the selected option', async () => {
-    const route = makeDemoRoutes(demoTrip)[1]!
+    const route = makePresentationRoutes(presentationTrip)[1]!
     const wrapper = mount(RouteOptionCard, {
-      props: { route, selected: false, crop: demoTrip.crop },
+      props: { route, selected: false, crop: presentationTrip.crop },
     })
 
     await wrapper.get('.route-select-button').trigger('click')

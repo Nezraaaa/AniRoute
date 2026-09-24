@@ -1,29 +1,29 @@
 import { computed, reactive } from 'vue'
-import { demoTrip, makeDemoRoutes } from '@/data/demo'
+import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
 import type { Coordinates, DetectedHazard, RouteOption, TripInput } from '@/types/aniRoute'
 
 const trip = reactive<TripInput>({
-  ...demoTrip,
-  cropLoads: demoTrip.cropLoads.map(crop => ({ ...crop })),
-  deliveryPoints: [...demoTrip.deliveryPoints],
+  ...presentationTrip,
+  cropLoads: presentationTrip.cropLoads.map(crop => ({ ...crop })),
+  deliveryPoints: [...presentationTrip.deliveryPoints],
 })
-const routes = reactive<RouteOption[]>(makeDemoRoutes(trip))
+const routes = reactive<RouteOption[]>(makePresentationRoutes(trip))
 const state = reactive({
-  mode: 'demo' as 'demo' | 'live',
+  mode: 'presentation' as 'presentation' | 'live',
   loadingRoutes: false,
   fieldErrors: {} as Record<string, string>,
   selectedRouteId: 'optimal',
   activeRouteId: null as string | null,
-  routeSource: 'demo' as 'api' | 'demo' | 'local_demo',
-  routeMessage: 'Demo route options - enter pickup and delivery points to reposition the map.',
+  routeSource: 'presentation' as 'api' | 'presentation' | 'local_presentation',
+  routeMessage: 'Crop-aware route options are ready for the Baguio-to-Calamba scenario.',
   hazard: null as DetectedHazard | null,
   uploadStatus: 'idle' as 'idle' | 'uploading' | 'uploaded' | 'failed',
   uploadMessage: '',
   newRecommendedRouteId: null as string | null,
   apiConnected: false,
-  originCoordinates: null as Coordinates | null,
-  destinationCoordinates: null as Coordinates | null,
-  deliveryPointCoordinates: [] as Array<Coordinates | null>,
+  originCoordinates: { latitude: 16.402, longitude: 120.596 } as Coordinates | null,
+  destinationCoordinates: { latitude: 14.2117, longitude: 121.1653 } as Coordinates | null,
+  deliveryPointCoordinates: [{ latitude: 14.2117, longitude: 121.1653 }] as Array<Coordinates | null>,
 })
 
 const selectedRoute = computed(() => routes.find(route => route.id === state.selectedRouteId) ?? routes[0] ?? null)

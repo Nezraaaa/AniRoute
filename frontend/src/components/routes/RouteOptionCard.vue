@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { ChevronDown, Clock3, CloudRain, MapPin, ShieldCheck, Thermometer, Truck } from '@lucide/vue'
+import { ref, watch } from 'vue'
+import { ChevronDown, Clock3, CloudRain, MapPin, ShieldCheck, Thermometer, Truck, X } from '@lucide/vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import type { RouteCategory, RouteOption } from '@/types/aniRoute'
 
-defineProps<{
+const props = defineProps<{
   route: RouteOption
   selected: boolean
   crop: string
@@ -19,9 +19,13 @@ const emit = defineEmits<{
 const expanded = ref(false)
 
 function toggleRoute(id: string) {
-  expanded.value = !expanded.value
   emit('select', id)
+  expanded.value = props.selected ? !expanded.value : true
 }
+
+watch(() => props.selected, selected => {
+  if (!selected) expanded.value = false
+})
 
 const categoryText: Record<RouteCategory, string> = {
   optimal: 'Optimal · Best balance',
@@ -43,7 +47,7 @@ const riskText = {
       :aria-pressed="selected"
       :aria-expanded="expanded"
       :aria-controls="`route-details-${route.id}`"
-      :aria-label="`${expanded ? 'Collapse' : 'Expand'} ${categoryText[route.category]} details and show it on the map`"
+      :aria-label="`${expanded ? 'Close' : 'Open'} ${categoryText[route.category]} details and show it on the map`"
       @click="toggleRoute(route.id)"
     >
       <Badge v-if="route.recommended" class="route-recommended-badge" variant="default">Recommended</Badge>
@@ -52,7 +56,7 @@ const riskText = {
           <span :class="['route-category-mark', `mark-${route.category}`]" aria-hidden="true"></span>
           <div>
             <h4 class="route-card-title">{{ categoryText[route.category] }}</h4>
-            <p class="route-short-reason">{{ route.category === 'optimal' ? 'Recommended for this load' : route.category === 'safer' ? 'Lower known road and flood risk' : 'Shortest estimated travel time' }}</p>
+            <p class="route-short-reason">{{ route.category === 'optimal' ? 'Best balance for this crop and load' : route.category === 'safer' ? 'Lowest road and flood exposure' : 'Shortest estimated travel time' }}</p>
           </div>
         </div>
         <span class="route-header-actions">
@@ -63,7 +67,19 @@ const riskText = {
           />
         </span>
       </div>
-      <div v-if="expanded" :id="`route-details-${route.id}`" class="route-details-panel">
+    </button>
+
+    <section v-if="expanded" :id="`route-details-${route.id}`" class="route-floating-panel" role="dialog" :aria-label="`${categoryText[route.category]} details`">
+      <div class="route-floating-header">
+        <div>
+          <span class="detail-label">Selected route</span>
+          <strong>{{ categoryText[route.category] }}</strong>
+        </div>
+        <button type="button" class="route-floating-close" aria-label="Close route details" @click="expanded = false">
+          <X :size="18" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="route-floating-content">
         <div v-if="route.categories && route.categories.length > 1" class="category-badges">
           <Badge v-for="category in route.categories" :key="category" variant="secondary">{{ categoryText[category] }}</Badge>
         </div>
@@ -71,6 +87,7 @@ const riskText = {
         <div class="route-metrics">
           <div><Clock3 :size="18" aria-hidden="true" /><strong>{{ route.travelTimeMinutes }} min</strong><span>estimated</span></div>
           <div><MapPin :size="18" aria-hidden="true" /><strong>{{ route.distanceKm.toFixed(1) }} km</strong><span>distance</span></div>
+          <div><ShieldCheck :size="18" aria-hidden="true" /><strong>{{ route.cropRiskScore }}/100</strong><span>crop risk score</span></div>
         </div>
 
         <div class="route-details-grid">
@@ -90,17 +107,25 @@ const riskText = {
             <ShieldCheck :size="16" aria-hidden="true" />
             <div>
               <span class="detail-label">Crop transport risk · {{ crop.trim() || 'your crop' }}</span>
-              <strong>{{ riskText[route.cropRiskLabel] }}</strong>
+              <strong>{{ riskText[route.cropRiskLabel] }} · {{ route.cropRiskScore }}/100</strong>
             </div>
           </div>
         </div>
 
+        <div class="risk-breakdown" aria-label="Risk score factors">
+          <span><strong>{{ route.riskFactors.travelTime }}</strong> Time</span>
+          <span><strong>{{ route.riskFactors.distance }}</strong> Distance</span>
+          <span><strong>{{ route.riskFactors.road }}</strong> Road</span>
+          <span><strong>{{ route.riskFactors.floodWeather }}</strong> Flood</span>
+          <span><strong>{{ route.riskFactors.temperature }}</strong> Heat</span>
+        </div>
+        <p class="crop-profile-summary">{{ route.cropProfileSummary }}</p>
         <p class="route-explanation">{{ route.explanation }}</p>
-        <p v-if="route.source === 'demo'" class="route-demo-note">Sample risk level · not a spoilage or freshness prediction.</p>
+        <p class="route-score-note">Interpretable transport risk score · not a spoilage percentage.</p>
       </div>
-    </button>
-    <div v-if="expanded" class="route-actions">
-      <Button class="w-full" size="lg" :disabled="loading" @click="emit('use', route.id)">Use this route</Button>
-    </div>
+      <div class="route-actions">
+        <Button class="w-full" size="lg" :disabled="loading" @click="emit('use', route.id)">Use this route</Button>
+      </div>
+    </section>
   </Card>
 </template>

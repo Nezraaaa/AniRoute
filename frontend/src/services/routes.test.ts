@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calculateRoutes, recalculateRoute } from '@/services/routes'
 import { confirmHazard, scanCameraFrame } from '@/services/hazards'
-import { demoTrip, makeDemoRoutes } from '@/data/demo'
+import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
 import type { DetectedHazard } from '@/types/aniRoute'
 
 function jsonResponse(body: unknown, ok = true) {
@@ -14,27 +14,48 @@ afterEach(() => {
 })
 
 describe('route service adapter', () => {
-  it('updates demo estimates for edited trips and keeps its corridor limitation visible in the data', () => {
-    const baseline = makeDemoRoutes(demoTrip)
-    const edited = makeDemoRoutes({
-      ...demoTrip, crop: 'Leafy vegetables', quantity: 500, vehicle: 'Medium truck',
+  it('changes route ranking when crop sensitivity changes', () => {
+    const tomatoRoutes = makePresentationRoutes(presentationTrip)
+    const riceRoutes = makePresentationRoutes({
+      ...presentationTrip,
+      crop: 'Rice',
+      cropLoads: [{ name: 'Rice', quantity: 250 }],
+    })
+
+    expect(tomatoRoutes.find(route => route.recommended)?.id).toBe('optimal')
+    expect(riceRoutes.find(route => route.recommended)?.id).toBe('fastest')
+    expect(tomatoRoutes.find(route => route.id === 'fastest')?.cropRiskScore)
+      .not.toBe(riceRoutes.find(route => route.id === 'fastest')?.cropRiskScore)
+  })
+
+  it('raises the affected road factor and recommends the new lowest-risk route', () => {
+    const routes = makePresentationRoutes(presentationTrip, 'optimal')
+
+    expect(routes.find(route => route.id === 'optimal')?.riskFactors.road).toBe(56)
+    expect(routes.find(route => route.recommended)?.id).toBe('safer')
+  })
+
+  it('updates presentation estimates for edited trips and keeps the corridor geometry stable', () => {
+    const baseline = makePresentationRoutes(presentationTrip)
+    const edited = makePresentationRoutes({
+      ...presentationTrip, crop: 'Leafy vegetables', quantity: 500, vehicle: 'Medium truck',
       origin: 'Baguio farm pickup point', destination: 'Calamba, Laguna trading post',
     })
 
     expect(edited[0]?.travelTimeMinutes).toBeGreaterThan(baseline[0]!.travelTimeMinutes)
-    expect(edited[0]?.distanceKm).toBeGreaterThan(baseline[0]!.distanceKm)
+    expect(edited[0]?.distanceKm).toBe(baseline[0]!.distanceKm)
     expect(edited[0]?.cropRiskScore).toBeGreaterThan(baseline[0]!.cropRiskScore!)
     expect(edited[0]?.geometry).toEqual(baseline[0]?.geometry)
   })
 
-  it('keeps demo mode local instead of requesting the live route service', async () => {
+  it('keeps presentation mode local instead of requesting a route service', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await calculateRoutes(demoTrip, 'demo')
+    const result = await calculateRoutes(presentationTrip, 'presentation')
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(result.source).toBe('demo')
+    expect(result.source).toBe('presentation')
     expect(result.routes.map(route => route.category)).toEqual(['optimal', 'safer', 'fastest'])
   })
 
@@ -52,7 +73,7 @@ describe('route service adapter', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await calculateRoutes(demoTrip)
+    const result = await calculateRoutes(presentationTrip)
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(result.routes[0]).toMatchObject({ id: 'optimal', category: 'optimal', travelTimeMinutes: 52, cropRiskLabel: 'lower' })
@@ -63,21 +84,21 @@ describe('route service adapter', () => {
   it('shows a clear live integration error when the API is offline', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
 
-    await expect(calculateRoutes(demoTrip)).rejects.toThrow('Live route backend is unavailable')
+    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('connected route service is unavailable')
   })
 
   it('shows backend request errors instead of masking them as demo routes', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Trip could not be calculated.' }, false)))
 
-    await expect(calculateRoutes(demoTrip)).rejects.toThrow('Trip could not be calculated.')
+    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('Trip could not be calculated.')
   })
 
-  it('rejects demo-labelled route data while Live mode is active', async () => {
+  it('rejects non-production route data while connected mode is active', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
-      routes: [], data_source: 'demo', recommended_route_id: 'optimal',
+      routes: [], data_source: 'presentation', recommended_route_id: 'optimal',
     })))
 
-    await expect(calculateRoutes(demoTrip)).rejects.toThrow('Live route engine is not integrated yet')
+    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('did not return production route data')
   })
 
   it('uses the recalculation endpoint after a hazard confirmation', async () => {
@@ -94,7 +115,7 @@ describe('route service adapter', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await recalculateRoute(demoTrip, 'optimal', {
+    const result = await recalculateRoute(presentationTrip, 'optimal', {
       type: 'pothole', roadSegmentId: 'optimal-segment-2', observationId: 'observation-1',
     })
 
@@ -118,11 +139,11 @@ describe('hazard service adapter', () => {
     })
   })
 
-  it('keeps demo camera frames local instead of requesting the scanner API', async () => {
+  it('keeps presentation camera frames local instead of requesting the scanner API', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    expect(await scanCameraFrame('optimal', 'data:image/jpeg;base64,/9j/AA==', null, 'demo')).toBeNull()
+    expect(await scanCameraFrame('optimal', 'data:image/jpeg;base64,/9j/AA==', null, 'presentation')).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -149,7 +170,7 @@ describe('hazard service adapter', () => {
     expect(result).toMatchObject({ id: 'saved-1', status: 'uploaded', source: 'api', evidenceStored: true })
   })
 
-  it('keeps the demo computer-vision confirmation disconnected from the backend', async () => {
+  it('keeps the presentation camera confirmation disconnected from the backend', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const hazard: DetectedHazard = {
@@ -157,10 +178,10 @@ describe('hazard service adapter', () => {
       routeId: 'optimal', roadSegmentId: 'optimal-demo-vision-1', simulated: true,
     }
 
-    const result = await confirmHazard(hazard, undefined, 'demo')
+    const result = await confirmHazard(hazard, undefined, 'presentation')
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ status: 'uploaded', source: 'local_demo', evidenceStored: false })
+    expect(result).toMatchObject({ status: 'uploaded', source: 'local_presentation', evidenceStored: false })
   })
 
   it('does not label a rejected backend upload as successful', async () => {
@@ -181,7 +202,7 @@ describe('hazard service adapter', () => {
     }
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
 
-    await expect(confirmHazard(hazard)).rejects.toThrow('Live hazard confirmation backend is unavailable')
-    expect(localStorage.getItem('aniroute-demo-road-updates')).toBeNull()
+    await expect(confirmHazard(hazard)).rejects.toThrow('Hazard confirmation service is unavailable')
+    expect(localStorage.getItem('aniroute-road-observations')).toBeNull()
   })
 })

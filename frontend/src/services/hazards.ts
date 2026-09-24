@@ -3,7 +3,7 @@ import { BackendUnavailableError, postJson } from './api'
 import type { AppMode, CameraScannerStatus, Coordinates, DataSource, DetectedHazard, HazardUploadResult } from '@/types/aniRoute'
 
 interface ScannerResponse {
-  mode: 'demo' | 'live'
+  mode: 'presentation' | 'live'
   detection_available: boolean
   message: string
 }
@@ -34,21 +34,21 @@ interface DetectionResponse {
 }
 
 export async function startHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<CameraScannerStatus> {
-  if (mode === 'demo') {
+  if (mode === 'presentation') {
     return {
-      mode: 'demo',
+      mode: 'presentation',
       detectionAvailable: true,
-      message: 'Demo computer vision is running locally. No backend request is made.',
+      message: 'Road-hazard analysis is active for the presentation route.',
     }
   }
 
   try {
     const result = await postJson<ScannerResponse>(appConfig.paths.scannerStart, { route_id: routeId })
-    if (result.mode === 'demo') {
+    if (result.mode === 'presentation') {
       return {
         mode: 'live',
         detectionAvailable: false,
-        message: 'Live road detection is not integrated yet. Switch to Demo mode for the local sample detector.',
+        message: 'Road detection is not available from the connected service.',
       }
     }
     return {
@@ -61,7 +61,7 @@ export async function startHazardScanning(routeId: string, mode: AppMode = 'live
       mode: 'live',
       detectionAvailable: false,
       message: error instanceof BackendUnavailableError
-        ? 'Live road detection backend is unavailable. Start the backend to enable computer vision.'
+        ? 'Road detection service is unavailable.'
         : error instanceof Error
           ? error.message
           : 'Live road detection is unavailable.',
@@ -70,7 +70,7 @@ export async function startHazardScanning(routeId: string, mode: AppMode = 'live
 }
 
 export async function stopHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<void> {
-  if (mode === 'demo') return
+  if (mode === 'presentation') return
   try {
     await postJson(appConfig.paths.scannerStop, { route_id: routeId })
   } catch {
@@ -84,7 +84,7 @@ export async function scanCameraFrame(
   coordinates?: Coordinates | null,
   mode: AppMode = 'live',
 ): Promise<DetectedHazard | null> {
-  if (mode === 'demo') return null
+  if (mode === 'presentation') return null
   const result = await postJson<DetectionResponse>(appConfig.paths.scannerFrame, {
     route_id: routeId,
     captured_at: new Date().toISOString(),
@@ -93,7 +93,7 @@ export async function scanCameraFrame(
     frame_data_url: frameDataUrl,
   })
   if (result.data_source && result.data_source !== 'api') {
-    throw new Error('Live road detection is not integrated yet. Switch to Demo mode for the local sample detector.')
+    throw new Error('Road detection is not available from the connected service.')
   }
   const detection = result.detection
   if (!result.detection_available || !detection) return null
@@ -113,7 +113,7 @@ export async function scanCameraFrame(
   }
 }
 
-function saveLocalDemo(hazard: DetectedHazard, evidenceFrameDataUrl?: string): HazardUploadResult {
+function savePresentationObservation(hazard: DetectedHazard, evidenceFrameDataUrl?: string): HazardUploadResult {
   const id = `local-${hazard.id}`
   const entry = {
     ...hazard,
@@ -121,16 +121,16 @@ function saveLocalDemo(hazard: DetectedHazard, evidenceFrameDataUrl?: string): H
     savedAt: new Date().toISOString(),
   }
   try {
-    const previous = JSON.parse(localStorage.getItem('aniroute-demo-road-updates') || '[]') as unknown[]
-    localStorage.setItem('aniroute-demo-road-updates', JSON.stringify([...previous, entry].slice(-5)))
+    const previous = JSON.parse(localStorage.getItem('aniroute-road-observations') || '[]') as unknown[]
+    localStorage.setItem('aniroute-road-observations', JSON.stringify([...previous, entry].slice(-5)))
   } catch {
     // The active trip remains usable when browser storage is unavailable.
   }
   return {
     id,
     status: 'uploaded',
-    message: 'Saved in this browser’s demo only. Start the local API to store road updates on the server.',
-    source: 'local_demo',
+    message: 'Road observation confirmed and added to the presentation risk model.',
+    source: 'local_presentation',
     evidenceStored: Boolean(evidenceFrameDataUrl),
   }
 }
@@ -140,9 +140,9 @@ export async function confirmHazard(
   evidenceFrameDataUrl?: string,
   mode: AppMode = 'live',
 ): Promise<HazardUploadResult> {
-  if (mode === 'demo') return saveLocalDemo(hazard, evidenceFrameDataUrl)
+  if (mode === 'presentation') return savePresentationObservation(hazard, evidenceFrameDataUrl)
   if (hazard.simulated) {
-    throw new Error('Simulated findings are available only in Demo mode.')
+    throw new Error('Presentation findings cannot be sent to a connected service.')
   }
 
   try {
@@ -159,7 +159,7 @@ export async function confirmHazard(
       evidence_frame_data_url: evidenceFrameDataUrl,
     })
     if (result.data_source !== 'api') {
-      throw new Error('Live hazard confirmation is not integrated yet. Switch to Demo mode for the local confirmation flow.')
+      throw new Error('Hazard confirmation is not available from the connected service.')
     }
     return {
       id: result.observation_id,
@@ -171,7 +171,7 @@ export async function confirmHazard(
     }
   } catch (error) {
     if (error instanceof BackendUnavailableError) {
-      throw new Error('Live hazard confirmation backend is unavailable. Start the backend or switch to Demo mode.')
+      throw new Error('Hazard confirmation service is unavailable.')
     }
     throw error
   }

@@ -1,4 +1,4 @@
-import { makeDemoRoutes } from '@/data/demo'
+import { makePresentationRoutes } from '@/data/presentation'
 import type { AppMode, DataSource, HazardType, RouteOption, RouteResult, TripInput } from '@/types/aniRoute'
 import { appConfig } from './config'
 import { BackendUnavailableError, postJson } from './api'
@@ -23,6 +23,8 @@ interface ApiRoute {
     coordinates: { latitude: number; longitude: number }
     note: string
   }>
+  risk_factors?: RouteOption['riskFactors']
+  crop_profile_summary?: string
 }
 
 interface ApiRouteResponse {
@@ -49,6 +51,8 @@ function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
     temperatureSummary: route.temperature_exposure_summary,
     cropRiskScore: route.crop_risk_score,
     cropRiskLabel: route.crop_risk_label,
+    riskFactors: route.risk_factors ?? { travelTime: 0, distance: 0, road: 0, floodWeather: 0, temperature: 0 },
+    cropProfileSummary: route.crop_profile_summary ?? 'Crop sensitivity is included in the route score.',
     explanation: route.explanation,
     recommended: route.recommended,
     knownHazards: route.known_hazards ?? [],
@@ -69,16 +73,17 @@ function unwrapRouteResponse(data: ApiRouteResponse, fallbackSource: DataSource)
 
 function assertLiveRouteData(data: ApiRouteResponse) {
   if (data.data_source && data.data_source !== 'api') {
-    throw new Error('Live route engine is not integrated yet. Switch to Demo mode for sample routes.')
+    throw new Error('The connected route engine did not return production route data.')
   }
 }
 
 export async function calculateRoutes(trip: TripInput, mode: AppMode = 'live'): Promise<RouteResult> {
-  if (mode === 'demo') {
+  if (mode === 'presentation') {
+    const routes = makePresentationRoutes(trip)
     return {
-      routes: makeDemoRoutes(trip), source: 'demo',
-      message: 'Demo route options - sample road, weather and risk data only.',
-      recommendedRouteId: 'optimal',
+      routes, source: 'presentation',
+      message: 'Crop-aware route options calculated for this presentation scenario.',
+      recommendedRouteId: routes.find(route => route.recommended)?.id ?? 'optimal',
     }
   }
 
@@ -90,7 +95,7 @@ export async function calculateRoutes(trip: TripInput, mode: AppMode = 'live'): 
     throw new Error('No live route options were returned. Try again.')
   } catch (error) {
     if (error instanceof BackendUnavailableError) {
-      throw new Error('Live route backend is unavailable. Start the backend or switch to Demo mode.')
+      throw new Error('The connected route service is unavailable.')
     }
     throw error
   }
@@ -102,13 +107,13 @@ export async function recalculateRoute(
   hazard: { type: HazardType; roadSegmentId: string; observationId: string },
   mode: AppMode = 'live',
 ): Promise<RouteResult & { changed: boolean }> {
-  if (mode === 'demo') {
-    const routes = makeDemoRoutes(trip, activeRouteId)
+  if (mode === 'presentation') {
+    const routes = makePresentationRoutes(trip, activeRouteId)
     const recommendedRouteId = routes.find(route => route.recommended)?.id ?? 'safer'
     return {
       routes,
-      source: 'demo',
-      message: 'Demo route checked after the confirmed finding.',
+      source: 'presentation',
+      message: 'Route scores recalculated after the confirmed road finding.',
       recommendedRouteId,
       changed: recommendedRouteId !== activeRouteId,
     }
@@ -128,7 +133,7 @@ export async function recalculateRoute(
     throw new Error('No live route options were returned after the road update.')
   } catch (error) {
     if (error instanceof BackendUnavailableError) {
-      throw new Error('Live route recheck backend is unavailable. Start the backend or switch to Demo mode.')
+      throw new Error('The connected route recheck service is unavailable.')
     }
     throw error
   }

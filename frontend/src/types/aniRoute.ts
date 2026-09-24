@@ -1,8 +1,8 @@
 export type RouteCategory = 'optimal' | 'safer' | 'fastest'
-export type AppMode = 'demo' | 'live'
+export type AppMode = 'presentation' | 'live'
 export type HazardType = 'pothole' | 'severe_road_damage' | 'standing_water' | 'road_obstruction'
 export type RiskLevel = 'lower' | 'moderate' | 'higher'
-export type DataSource = 'api' | 'demo' | 'local_demo'
+export type DataSource = 'api' | 'presentation' | 'local_presentation'
 
 export interface Coordinates {
   latitude: number
@@ -59,6 +59,14 @@ export interface RouteOption {
   temperatureSummary: string
   cropRiskScore: number | null
   cropRiskLabel: RiskLevel
+  riskFactors: {
+    travelTime: number
+    distance: number
+    road: number
+    floodWeather: number
+    temperature: number
+  }
+  cropProfileSummary: string
   explanation: string
   recommended: boolean
   knownHazards: HazardPin[]
@@ -97,7 +105,7 @@ export interface RouteResult {
 }
 
 export interface CameraScannerStatus {
-  mode: 'demo' | 'live'
+  mode: 'presentation' | 'live'
   detectionAvailable: boolean
   message: string
 }

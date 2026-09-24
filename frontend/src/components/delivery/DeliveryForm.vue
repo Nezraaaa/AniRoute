@@ -10,7 +10,7 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import LocationSearch from '@/components/delivery/LocationSearch.vue'
-import { demoDestinations, demoOrigins } from '@/data/demo'
+import { presentationDestinations, presentationOrigins } from '@/data/presentation'
 import type { AppMode, LocationSuggestion, TripInput } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<{
   errors: Record<string, string>
   loading?: boolean
   mode?: AppMode
-}>(), { mode: 'demo' })
+}>(), { mode: 'presentation' })
 const trip = props.trip
 const errors = computed(() => props.errors)
 const loading = computed(() => props.loading)
@@ -160,7 +160,7 @@ function submitForm() {
               id="origin"
               v-model="trip.origin"
               :mode="mode"
-              :local-suggestions="demoOrigins"
+              :local-suggestions="presentationOrigins"
               placeholder="Enter farm or pickup point"
               :invalid="Boolean(errors.origin)"
               described-by="origin-error"
@@ -186,7 +186,7 @@ function submitForm() {
                     :id="`destination-${index}`"
                     :model-value="point"
                     :mode="mode"
-                    :local-suggestions="demoDestinations"
+                    :local-suggestions="presentationDestinations"
                     icon="search"
                     placeholder="Search delivery point"
                     :invalid="Boolean(errors[`destination-${index}`])"

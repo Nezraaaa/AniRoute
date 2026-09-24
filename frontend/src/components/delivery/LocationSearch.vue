@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   describedBy?: string
   localSuggestions?: string[]
 }>(), {
-  mode: 'live',
+  mode: 'presentation',
   icon: 'pin',
   invalid: false,
   describedBy: undefined,
@@ -61,7 +61,7 @@ watch(() => props.mode, mode => {
   searching.value = false
   activeIndex.value = -1
   searchErrorMessage.value = ''
-  suggestions.value = mode === 'demo' ? localMatches(query.value) : []
+  suggestions.value = mode === 'presentation' ? localMatches(query.value) : []
   if (mode === 'live' && focused.value && query.value.trim().length >= 2) scheduleSearch(query.value)
 })
 
@@ -91,10 +91,10 @@ function scheduleSearch(value: string) {
   searching.value = false
   activeIndex.value = -1
   searchErrorMessage.value = ''
-  suggestions.value = props.mode === 'demo' ? localMatches(value) : []
+  suggestions.value = props.mode === 'presentation' ? localMatches(value) : []
   open.value = value.trim().length >= 2
   if (value.trim().length < 2) return
-  if (props.mode === 'demo') return
+  if (props.mode === 'presentation') return
 
   searchTimer = window.setTimeout(() => { void runSearch(value) }, 300)
 }
@@ -113,7 +113,7 @@ async function runSearch(value: string) {
     suggestions.value = []
     searchErrorMessage.value = error instanceof Error
       ? error.message
-      : 'Live location search is unavailable. Start the backend or switch to Demo mode.'
+      : 'Location search is unavailable. Choose one of the presentation locations.'
   } finally {
     if (!controller.signal.aborted) searching.value = false
   }
@@ -174,7 +174,7 @@ function primaryLabel(displayName: string) {
 }
 
 function secondaryLabel(location: LocationSuggestion) {
-  if (location.source === 'local') return 'Sample place · choose to keep this demo location'
+  if (location.source === 'local') return 'Presentation corridor location'
   return location.type || location.category || 'OpenStreetMap place result'
 }
 
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
     </div>
 
     <datalist :id="datalistId">
-      <option v-if="mode === 'demo'" v-for="place in localSuggestions" :key="place" :value="place" />
+      <option v-if="mode === 'presentation'" v-for="place in localSuggestions" :key="place" :value="place" />
       <option v-for="location in suggestions" :key="`remote-${location.id}`" :value="location.displayName" />
     </datalist>
   </div>

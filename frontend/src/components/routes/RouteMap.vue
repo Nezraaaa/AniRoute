@@ -2,7 +2,7 @@
 import { computed, createVNode, onBeforeUnmount, onMounted, ref, render, shallowRef, watch } from 'vue'
 import type { GeoJSONSource, LayerSpecification, Map as MapInstance, Marker as MapMarker, StyleSpecification } from 'maplibre-gl'
 import { MapPin, Move } from '@lucide/vue'
-import { demoRouteGeometry } from '@/data/demo'
+import { presentationRouteGeometry } from '@/data/presentation'
 import { appConfig, defaultCartoStyleUrl, withCartoBasemapKey } from '@/services/config'
 import type { Coordinates, RouteCategory, RouteOption, TripInput } from '@/types/aniRoute'
 
@@ -82,8 +82,8 @@ function routeLines(): Array<Pick<RouteOption, 'id' | 'category' | 'geometry' | 
   return prototypeCategoryOrder.map(category => routes.find(route => route.category === category) ?? {
     id: `prototype-${category}`,
     category,
-    geometry: demoRouteGeometry[category],
-    source: 'demo' as const,
+    geometry: presentationRouteGeometry[category],
+    source: 'presentation' as const,
   })
 }
 
@@ -180,31 +180,36 @@ function updateRouteOverlay() {
   overlay.style.width = `${width}px`
   overlay.style.height = `${height}px`
 
-  const groups = routeLines().map(route => {
-    const pathData = routeCoordinates(route)
-      .map((coordinate, index) => {
-        const point = instance.project(coordinate)
-        return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
-      })
-      .join(' ')
-    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-    const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    casing.setAttribute('d', pathData)
-    casing.setAttribute('fill', 'none')
-    casing.setAttribute('stroke', '#ffffff')
-    casing.setAttribute('stroke-width', '17')
-    casing.setAttribute('stroke-linecap', 'round')
-    casing.setAttribute('stroke-linejoin', 'round')
-    line.setAttribute('d', pathData)
-    line.setAttribute('fill', 'none')
-    line.setAttribute('stroke', categoryColors[route.category] ?? '#0b7a54')
-    line.setAttribute('stroke-width', route.id === props.selectedRouteId ? '11' : '9')
-    line.setAttribute('stroke-linecap', 'round')
-    line.setAttribute('stroke-linejoin', 'round')
-    group.append(casing, line)
-    return group
-  })
+  const groups = routeLines()
+    .sort((left, right) => Number(left.id === props.selectedRouteId) - Number(right.id === props.selectedRouteId))
+    .map(route => {
+      const isSelected = route.id === props.selectedRouteId
+      const pathData = routeCoordinates(route)
+        .map((coordinate, index) => {
+          const point = instance.project(coordinate)
+          return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+        })
+        .join(' ')
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+      const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      casing.setAttribute('d', pathData)
+      casing.setAttribute('fill', 'none')
+      casing.setAttribute('stroke', '#ffffff')
+      casing.setAttribute('stroke-width', isSelected ? '17' : '9')
+      casing.setAttribute('stroke-opacity', isSelected ? '1' : '.1')
+      casing.setAttribute('stroke-linecap', 'round')
+      casing.setAttribute('stroke-linejoin', 'round')
+      line.setAttribute('d', pathData)
+      line.setAttribute('fill', 'none')
+      line.setAttribute('stroke', categoryColors[route.category] ?? '#0b7a54')
+      line.setAttribute('stroke-width', isSelected ? '11' : '5')
+      line.setAttribute('stroke-opacity', isSelected ? '1' : '.14')
+      line.setAttribute('stroke-linecap', 'round')
+      line.setAttribute('stroke-linejoin', 'round')
+      group.append(casing, line)
+      return group
+    })
   overlay.replaceChildren(...groups)
 }
 
@@ -280,7 +285,7 @@ function routeThroughWaypoints(waypoints: MapPoint[], category: RouteOption['cat
 
 function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'source'>): MapPoint[] {
   const baseCoordinates = showPrototypeRoutes.value && !hasMapSelection.value
-    ? demoRouteGeometry[route.category].coordinates
+    ? presentationRouteGeometry[route.category].coordinates
     : route.geometry.coordinates
   const coordinates = baseCoordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
   if (!coordinates.length) return coordinates
@@ -291,7 +296,7 @@ function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'so
 
   if (!showPrototypeRoutes.value && route.source !== 'api') return []
 
-  // Demo routes are illustrative: connect every selected stop in order so
+  // Presentation routes connect every selected stop in order so
   // points A, B, C and later stops remain visible in the route preview.
   if (waypoints.length > 1) return routeThroughWaypoints(waypoints, route.category)
   const anchor = origin ? coordinates[0]! : coordinates[coordinates.length - 1]!
@@ -443,6 +448,7 @@ function addRouteLayers(instance: MapInstance) {
 
   for (const routeLayer of routeLayerDefinitions) {
     const data = routeGeoJsonFor(routeLayer.category)
+    const isSelected = data.features.some(feature => feature.properties.routeId === props.selectedRouteId)
     const routeSource = instance.getSource(routeLayer.sourceId) as GeoJSONSource | undefined
     if (routeSource) routeSource.setData(data)
     else instance.addSource(routeLayer.sourceId, { type: 'geojson', data })
@@ -463,6 +469,10 @@ function addRouteLayers(instance: MapInstance) {
         paint: { 'line-color': routeLayer.color, 'line-offset': routeLayer.offset, 'line-width': 10, 'line-opacity': 1 },
       })
     }
+    instance.setPaintProperty(routeLayer.casingId, 'line-width', isSelected ? 16 : 8)
+    instance.setPaintProperty(routeLayer.casingId, 'line-opacity', isSelected ? 1 : 0.08)
+    instance.setPaintProperty(routeLayer.layerId, 'line-width', isSelected ? 10 : 5)
+    instance.setPaintProperty(routeLayer.layerId, 'line-opacity', isSelected ? 1 : 0.14)
   }
 
   try {
@@ -591,7 +601,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : showPrototypeRoutes ? 'Prototype route lines are shown for layout testing. Select locations to place draggable pins.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
+    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : showPrototypeRoutes ? 'The presentation corridor is ready. Select locations to place draggable pins.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
     <div class="map-legend" aria-label="Route color legend">
       <span><i class="legend-line legend-optimal"></i> Recommended route</span>
       <span><i class="legend-line legend-safer"></i> Safer route</span>
@@ -600,7 +610,7 @@ onBeforeUnmount(() => {
     <p class="map-attribution map-attribution-links">
       &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>
       &middot; &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-      &middot; {{ showPrototypeRoutes ? 'Prototype route lines; live road directions are not connected.' : 'Live road directions are supplied by the backend.' }}
+      &middot; {{ showPrototypeRoutes ? 'Routes follow the selected agricultural corridor.' : 'Live road directions are supplied by the backend.' }}
     </p>
   </section>
 </template>

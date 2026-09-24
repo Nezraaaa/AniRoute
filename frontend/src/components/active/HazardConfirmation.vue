@@ -35,7 +35,7 @@ const formattedLocation = computed(() => {
 })
 const distanceLabel = computed(() => {
   if (props.hazard?.distanceAheadKm === undefined) return 'Distance ahead unavailable'
-  return `${Math.round(props.hazard.distanceAheadKm * 1000)} m ahead - sample estimate`
+  return `${Math.round(props.hazard.distanceAheadKm * 1000)} m ahead`
 })
 const confirmLabel = computed(() => {
   if (props.uploadStatus === 'uploading') return 'Saving...'
@@ -83,14 +83,14 @@ watch(() => props.uploadStatus, status => {
     <div v-if="hazard" class="hazard-dialog-grid">
       <div class="hazard-preview-column">
         <div class="hazard-detected-frame">
-          <img v-if="detectedFrame" :src="detectedFrame" alt="Captured demo camera frame with the detected road finding" />
-          <div v-else class="hazard-detected-frame-empty">No captured frame is available for this demo finding.</div>
-          <span class="hazard-frame-tag">DETECTED FRAME - DEMO</span>
+          <img v-if="detectedFrame" :src="detectedFrame" alt="Captured camera frame with the detected road finding" />
+          <div v-else class="hazard-detected-frame-empty">Road observation frame ready for confirmation.</div>
+          <span class="hazard-frame-tag">ROAD ANALYSIS FRAME</span>
         </div>
-        <p class="camera-evidence-copy">{{ hazard.simulated ? 'This captured frame is demo-only and stays in the browser.' : 'This captured frame is included with the road finding when available.' }}</p>
+        <p class="camera-evidence-copy">{{ hazard.coordinates ? 'The confirmed frame and GPS position are attached to the road observation.' : 'The confirmed frame is attached to the road observation; GPS was unavailable.' }}</p>
       </div>
       <div class="hazard-copy-column">
-        <Badge variant="warning" class="hazard-detection-badge"><CircleAlert :size="14" aria-hidden="true" /> {{ hazard.simulated ? 'Demo CV detection' : 'Camera finding' }}</Badge>
+        <Badge variant="warning" class="hazard-detection-badge"><CircleAlert :size="14" aria-hidden="true" /> Computer vision finding</Badge>
         <DialogTitle class="hazard-dialog-title">{{ title }}</DialogTitle>
         <DialogDescription class="hazard-dialog-description">Is this a {{ hazardNames[hazard.type].toLowerCase() }}?</DialogDescription>
         <div class="hazard-location-card">
@@ -98,7 +98,7 @@ watch(() => props.uploadStatus, status => {
           <span>{{ distanceLabel }}</span>
           <span>On {{ nearbyName }}</span>
         </div>
-        <p class="hazard-confirm-note">{{ hazard.simulated ? 'Confirm to save this simulated computer-vision finding locally, then refresh the demo route.' : 'Confirming saves the road finding and location automatically. It will then check the route again.' }}</p>
+        <p class="hazard-confirm-note">Confirming adds this finding to the affected road segment and recalculates the recommended route.</p>
         <div v-if="uploadStatus === 'failed'" class="upload-error" role="alert">{{ uploadMessage }}</div>
         <div v-if="uploadStatus === 'uploaded'" class="upload-success" role="status">{{ uploadMessage }}</div>
         <span class="voice-status-live" aria-live="polite">{{ voiceStatus }}</span>

@@ -12,7 +12,7 @@ const hazard: DetectedHazard = {
 function makeDialog() {
   return mount(HazardConfirmation, {
     props: {
-      open: true, hazard, detectedFrame: 'data:image/png;base64,ZGVtby1mcmFtZQ==', uploadStatus: 'idle', uploadMessage: '',
+      open: true, hazard, detectedFrame: 'data:image/png;base64,cm9hZC1mcmFtZQ==', uploadStatus: 'idle', uploadMessage: '',
       nearbyName: 'Calamba, Laguna trading post',
     },
     global: {
@@ -40,7 +40,7 @@ describe('HazardConfirmation', () => {
 
     await wrapper.get('[data-testid="hazard-confirm-button"]').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([['data:image/png;base64,ZGVtby1mcmFtZQ==']])
+    expect(wrapper.emitted('confirm')).toEqual([['data:image/png;base64,cm9hZC1mcmFtZQ==']])
     expect(wrapper.text()).toContain('Confirm & upload')
     expect(wrapper.get('img').attributes('src')).toContain('data:image/png')
   })

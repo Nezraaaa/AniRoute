@@ -14,7 +14,7 @@ interface GeocodingResponseItem {
 export async function searchLocations(query: string, signal?: AbortSignal, mode: AppMode = 'live'): Promise<LocationSuggestion[]> {
   const trimmedQuery = query.trim()
   if (trimmedQuery.length < 2) return []
-  if (mode === 'demo') return []
+  if (mode === 'presentation') return []
 
   const params = new URLSearchParams({ q: trimmedQuery, limit: '6' })
   let response: Response
@@ -25,7 +25,7 @@ export async function searchLocations(query: string, signal?: AbortSignal, mode:
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new Error('Live location search backend is unavailable. Start the backend or switch to Demo mode.')
+    throw new Error('The connected location search service is unavailable.')
   }
 
   if (!response.ok) throw new Error(`Location search failed with status ${response.status}.`)
