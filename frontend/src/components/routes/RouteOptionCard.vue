@@ -37,6 +37,16 @@ const riskText = {
   moderate: 'Some known transport concern',
   higher: 'Higher known transport concern',
 }
+
+function factorSeverity(value: number) {
+  if (value >= 55) return 'high'
+  if (value >= 35) return 'moderate'
+  return 'low'
+}
+
+function factorLabel(name: string, value: number) {
+  return `${name}: ${value} out of 100, ${factorSeverity(value)} severity`
+}
 </script>
 
 <template>
@@ -113,11 +123,11 @@ const riskText = {
         </div>
 
         <div class="risk-breakdown" aria-label="Risk score factors">
-          <span><strong>{{ route.riskFactors.travelTime }}</strong> Time</span>
-          <span><strong>{{ route.riskFactors.distance }}</strong> Distance</span>
-          <span><strong>{{ route.riskFactors.road }}</strong> Road</span>
-          <span><strong>{{ route.riskFactors.floodWeather }}</strong> Flood</span>
-          <span><strong>{{ route.riskFactors.temperature }}</strong> Heat</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.travelTime)}`" :aria-label="factorLabel('Time', route.riskFactors.travelTime)"><strong>{{ route.riskFactors.travelTime }}</strong> Time</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.distance)}`" :aria-label="factorLabel('Distance', route.riskFactors.distance)"><strong>{{ route.riskFactors.distance }}</strong> Distance</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.road)}`" :aria-label="factorLabel('Road', route.riskFactors.road)"><strong>{{ route.riskFactors.road }}</strong> Road</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.floodWeather)}`" :aria-label="factorLabel('Flood', route.riskFactors.floodWeather)"><strong>{{ route.riskFactors.floodWeather }}</strong> Flood</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.temperature)}`" :aria-label="factorLabel('Heat', route.riskFactors.temperature)"><strong>{{ route.riskFactors.temperature }}</strong> Heat</span>
         </div>
         <p class="crop-profile-summary">{{ route.cropProfileSummary }}</p>
         <p class="route-explanation">{{ route.explanation }}</p>

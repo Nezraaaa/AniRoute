@@ -46,6 +46,9 @@ describe('route service adapter', () => {
     expect(edited[0]?.distanceKm).toBe(baseline[0]!.distanceKm)
     expect(edited[0]?.cropRiskScore).toBeGreaterThan(baseline[0]!.cropRiskScore!)
     expect(edited[0]?.geometry).toEqual(baseline[0]?.geometry)
+    expect(baseline.every(route => route.geometry.coordinates.length > 200)).toBe(true)
+    expect(baseline.every(route => (route.geometry.coordinates[0]?.[1] ?? 0) > 16.39)).toBe(true)
+    expect(baseline.every(route => (route.geometry.coordinates.at(-1)?.[1] ?? 90) < 14.22)).toBe(true)
   })
 
   it('keeps presentation mode local instead of requesting a route service', async () => {

@@ -254,8 +254,12 @@ select.field-control {
 .route-metrics span { color: #758077; font-size: 10px; }
 .route-details-grid { display: flex; flex-direction: column; gap: 10px; }
 .risk-breakdown { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
-.risk-breakdown span { display: flex; min-width: 0; flex-direction: column; align-items: center; padding: 8px 4px; border: 1px solid #dfe7df; border-radius: 9px; color: #68766b; background: #f7faf7; font-size: 9px; font-weight: 700; text-transform: uppercase; }
-.risk-breakdown strong { color: var(--green-800); font-size: 14px; }
+.risk-breakdown span { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: center; padding: 9px 4px 8px; border: 1px solid; border-radius: 9px; font-size: 9px; font-weight: 750; text-transform: uppercase; transition: border-color .16s ease, background-color .16s ease, color .16s ease; }
+.risk-breakdown span::after { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ''; }
+.risk-breakdown strong { color: inherit; font-size: 14px; }
+.risk-breakdown .risk-factor-low { border-color: #b9ddc4; color: #176b46; background: #edf8f1; }
+.risk-breakdown .risk-factor-moderate { border-color: #ead18a; color: #805b08; background: #fff7dd; }
+.risk-breakdown .risk-factor-high { border-color: #ebb3a9; color: #a33b2d; background: #fff0ed; }
 .crop-profile-summary { margin: 10px 0 0; color: #536258; font-size: 11px; line-height: 1.45; }
 .route-detail { display: flex; align-items: flex-start; gap: 9px; color: #657266; }
 .route-detail > svg { flex: 0 0 auto; margin-top: 2px; }

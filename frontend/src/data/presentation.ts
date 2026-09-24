@@ -23,6 +23,40 @@ export const presentationDestinations = [
   'Los Baños, Laguna consolidation center',
 ]
 
+function decodeRoadPolyline(encoded: string): [number, number][] {
+  const coordinates: [number, number][] = []
+  let index = 0
+  let latitude = 0
+  let longitude = 0
+
+  const nextDelta = () => {
+    let byte = 0
+    let shift = 0
+    let value = 0
+    do {
+      byte = encoded.charCodeAt(index++) - 63
+      value |= (byte & 0x1f) << shift
+      shift += 5
+    } while (byte >= 0x20)
+    return value & 1 ? ~(value >> 1) : value >> 1
+  }
+
+  while (index < encoded.length) {
+    latitude += nextDelta()
+    longitude += nextDelta()
+    coordinates.push([longitude / 1e5, latitude / 1e5])
+  }
+  return coordinates
+}
+
+// Simplified road-following paths captured from the OSM road network for the
+// presentation corridor. Keeping them local makes the map reliable on stage.
+const presentationRoadPolylines: Record<RouteCategory, string> = {
+  optimal: "kpbcBk|`_V_Bf@jHvQnAbTvDdBe@zXp\\n[|XbH`KrOoO~t@nFlWrQf]zGfFr~@oC~EbEgOfi@v@rYgH~FMtUkIUqBrDwIkGkF|@p@xLyIfFfQrPwa@p_@~TzH}IfMZ~LmHfPrNn^jCO|AeI~GrA~GcGlQoAWzCyKbA_HpMxRhSK``@dF_TpC]z@t_AbEjDlRVtFhGdQN|UmZdb@yEw[rQqF|KjJbFzZeGaDfIcObEu@nJlVbC~PbJ^uD{FkHjIk@pRl[xAiFuF}VtBcDvPw@jIfGrPcI|NfRpEgBnEqQv\\`DjBvEaEpKpOlBhJpPeLhQ}PfGUzFdc@gBr@bLdEfF_IvHNvEfNlQhf@bIlBtL~MrKpCdMlf@aGnm@aXxD_GbJv@rJoIxc@gKpUqVzGyWpIoLdY}@xb@qK~I~F|RrCdNkQp[cQhkAkL`T\\Jli@zOtGdCpMaB`R~SgD~I{Kn\\_Gn`@mPjRmc@vSgQ|kAaCpeBjHzN{Jzd@seAnNeL|s@oJpfAyXd}@pB|~@_YjqAjBl_AqQjhAgc@toA{{@zg@wWdhCgx@teAoc@x`A{ThqB{TnpBsuArs@kZfeD{t@dgDiKxpBqVtwAu`@v}CsuAxjA_[d{Eu[xzAyWldDiy@|{@aJju@m@jgAdIlaAlU`v@v\\tmBxkAn~Avd@z~@|Jnx@tAhvDaNx`BuUxgCi{@`bAgRhv@aE~yEw@zzA_SjrAqg@|oAw{@v`Bot@ndCazA`j@uO`t@kIn{@PtgAhJj}FduAzv@pLrhApEnfCyBt|@hL~m@tVt~KthGxkAnf@huEn_B`W`\\b`@rwAlRbQb\\jBjwDwq@vXs@`LrJbDgGZ}eClhA}ZvuAuh@zoAyt@pqAycAvfC{iCt`BkiArnA_m@d}CmfAtyA}y@voAchAfhBe~BjuAqqAfdAyr@pwB}fApdAap@rkMypKjuAu{@rr@kj@j{@idAlfAoqBlvAgtBhhCmzFfXoWdcVwmKx]aEpeApD~TsB`qBfAx]~Pll@dPvEmHeE}q@lB_Hl\\cEhNoKh]sCrf@wd@dj@`BzUaJhp@uBrQyNvNFbOsVj[aNhMpC`Una@rAlSaHrOjCtL_AfQpp@hp@dVlQbH~@hrH{cD~iBi}@jlCadA~_MwAtdAb`@~~@|F|_H{q@`aCu`ArmD_tC~jH{vCniJ_}EpEgA`@nCmQ{Pa]_l@wz@or@gB{FrBeAqLa\\",
+  safer: "kpbcBk|`_Vkc@`EqQnYgE\\aJhLbO|OKxJsJvLrB`LkDnC`@l]dUrk@qAlX{DMFvEuEi@m@nGqGJgCpJcVdO}K}DaWjk@uSm@gVnI}SfSmAxRcMrNqWpK_BnHgLdAqKvQsk@xg@gPzE{]nX}A_EeH[yUbIsF}CiMbFwKkIo[jF~AtO_MbC_NnM\\|KrLbHvCkBj@jDmTuD}FzF`GnXgArDfLpEzCjJeBrSkOhAoGtEuVg@wPxHyIn\\gHvJHtGwa@`GoLbJiRyAkQvBsMnJfCtD`Vb@`GvD`IlSxB~SwA~LkKpM}VwBw@lFaJxDsCeEyI`k@iExE{F?pBzDqXbMmIFgJrGe@jEoNjHrC`V_A`C}GiA~FxI}EpK}@zRlHyH`PsCeEdFzIhN{N{GmFbLcJzDm@vJeLQdLPl@wJbJ{DvFeLbPrKuIxQrGoDtMhBGpGeQ~SKnMhNnWrQ|I~DtH_Bnn@tYto@t`@m@`T|EdSJnCdJjRH|BmEja@C`XdGr_@g@|Z|CrZzc@r[|ExD`HqCtH~BnNnPtE`fA\\tz@_SbT_M|c@jI`O{DlDoFhYjBxCn_@|ZxN|D`XoQlXcC~Lav@fn@wJ|UxInNjHjAlCrKuDh^vId`@oDjTvZ}@dcAqTxiAiFjZiJ|nBbLhu@_OpmAgNfo@nCpbBcd@~oAcQgBwLtN{CtFz@LxKvUeClrCwjBfpAw_@laAoe@zN_NdbAaXtz@{ArQkJx@ca@z]ym@n@kOkJqu@f~@scBBgPdMqC|Sc~@w{@}dD|RwJrO}w@lgA}ArbBfIxQwKzd@seAnNeL|s@oJpfAyXd}@pB|~@_YjqAjBl_AqQjhAgc@toA{{@js@q]t|Bmr@zvAoj@~_AqQn~AaPhhCscBhfCgr@xqAoSprC}Gv}AgQvjB_f@v}CsuA`u@{Tfx@qLpqBwHhxAwNrgAqSjqCus@ts@}Kd~AiCfl@dEjr@dM`cAl^hbC`xAvu@zVly@rOvaBhHhkDuLxkBaWxgCi{@`bAgRhv@aE~yEw@rqAyO~rAke@pxAcaAv`Bot@ndCazAtmA{Wfj@mBfp@fBjlAzMrsG~zA~vAhHnfCyBhd@xD|f@dMb~LtyGxkAnf@huEn_B`W`\\b`@rwAxV~RvWn@nsDeq@r\\eA`LrJbDgGZ}eClhA}ZvuAuh@zoAyt@pqAycAvfC{iCt`BkiArnA_m@d}CmfAtyA}y@voAchAfhBe~BjuAqqAfdAyr@pwB}fApdAap@rkMypKjuAu{@rr@kj@j{@idAlfAoqBlvAgtBhhCmzFfXoWdcVwmKx]aEpeApD~TsB`qBfAx]~Pll@dPvEmHeE}q@lB_Hl\\cEhNoKh]sCrf@wd@dj@`BzUaJhp@uBrQyNvNFbOsVj[aNhMpC`Una@rAlSaHrOjCtL_AfQpp@hp@dVlQbH~@hrH{cD~iBi}@jlCadA~_MwAtdAb`@~~@|F|_H{q@`aCu`ArmD_tC~jH{vCniJ_}EpEgA`@nCmQ{Pa]_l@wz@or@gB{FrBeAqLa\\",
+  fastest: "kpbcBk|`_VzCiMjLuItGPjJtIxHwJzHnA`[sGjHj@nJ{CdPqPpCqQbPhC~UsAlMsLqFdN`IiGxCdCjMoCnEpApD_EzT`QyIu@oDuEa@hFoN|@hi@bM~FaGhKnClB{CkE{M|@yEvOUjQuFfd@ge@xK|BzDcBnCmMhIeHzL~JzJkMbXdUvPHfGwDbEhOlMzJhYcOzTh@~NuSz_@fJfDkAo@rHjLdStJF~TxR`MjDrDvMs@pL~LpFdH~YnIzKxWzSzKe@M|HoJhKdNnHfQr_@z@vNhLdIdKj\\`RdEfL|Y`KtG`Qd@z{@la@rUx{@x_@GbXjt@bE|CvM_@~Ez^lSl\\pFbYuA~ZjV~f@zXzBvk@jl@pe@Hpq@mIdTfAYsDtT{Kz\\mE~rAGdErFxWuA`GbLlHgI`iAwYz~@fB|~@_YjqAjBl_AqQjhAgc@toA{{@zg@wWdhCgx@teAoc@x`A{ThqB{TnpBsuArs@kZfeD{t@dgDiKxpBqVv}Aqc@fdDuxAxdAwVrtE_ZxzAyWldDiy@|{@aJju@m@jgAdIlaAlU`v@v\\tmBxkAn~Avd@z~@|Jnx@tAhvDaNx`BuUxgCi{@`bAgRhv@aE~yEw@rqAyO~rAke@pxAcaAv`Bot@ndCazAhx@oShcAyFr_AtDhy@lKrsG~zA~vAhHnfCyBhd@xDdc@lKzaMl{GxkAnf@huEn_B`W`\\b`@rwAxV~RvWn@nsDeq@r\\eA`LrJbDgGZ}eClhA}ZvuAuh@zoAyt@pqAycAvfC{iCt`BkiArnA_m@d}CmfAtyA}y@voAchAfhBe~BjuAqqAfdAyr@pwB}fApdAap@rkMypKjuAu{@rr@kj@j{@idAlfAoqBlvAgtBhhCmzFfXoWdcVwmKx]aEpeApD~TsB`qBfAx]~Pll@dPvEmHeE}q@lB_Hl\\cEhNoKh]sCrf@wd@dj@`BzUaJhp@uBrQyNvNFbOsVj[aNhMpC`Una@rAlSaHrOjCtL_AfQpp@hp@dVlQbH~@hrH{cD~iBi}@jlCadA~_MwAtdAb`@~~@|F|_H{q@`aCu`ArmD_tC~jH{vCniJ_}EpEgA`@nCmQ{Pa]_l@wz@or@gB{FrBeAqLa\\",
+}
+
 const standingWaterHazard = {
   id: 'standing-water-slex-01',
   name: 'Standing water',
@@ -31,30 +65,9 @@ const standingWaterHazard = {
 }
 
 export const presentationRouteGeometry: Record<RouteCategory, LineGeometry> = {
-  optimal: {
-    type: 'LineString',
-    coordinates: [
-      [120.596, 16.402], [120.57, 16.17], [120.68, 15.85],
-      [120.72, 15.47], [120.86, 15.10], [120.96, 14.72],
-      [121.03, 14.48], [121.17, 14.21],
-    ],
-  },
-  safer: {
-    type: 'LineString',
-    coordinates: [
-      [120.596, 16.402], [120.62, 16.18], [120.78, 15.87],
-      [120.92, 15.50], [121.02, 15.12], [121.16, 14.76],
-      [121.28, 14.40], [121.18, 14.21],
-    ],
-  },
-  fastest: {
-    type: 'LineString',
-    coordinates: [
-      [120.596, 16.402], [120.54, 16.12], [120.60, 15.77],
-      [120.72, 15.39], [120.89, 15.02], [121.03, 14.68],
-      [121.11, 14.39], [121.17, 14.21],
-    ],
-  },
+  optimal: { type: 'LineString', coordinates: decodeRoadPolyline(presentationRoadPolylines.optimal) },
+  safer: { type: 'LineString', coordinates: decodeRoadPolyline(presentationRoadPolylines.safer) },
+  fastest: { type: 'LineString', coordinates: decodeRoadPolyline(presentationRoadPolylines.fastest) },
 }
 
 type CropProfile = {
@@ -137,7 +150,7 @@ export function makePresentationRoutes(trip: TripInput, affectedRouteId?: string
     explanation: string
   }> = [
     {
-      id: 'optimal', time: 310, distance: 253.4,
+      id: 'optimal', time: 310, distance: 312.7,
       road: 'Mostly paved; avoids the roughest mountain section',
       weather: 'Moderate rainfall exposure; low flood exposure',
       temperature: 'Moderate afternoon heat exposure',
@@ -145,15 +158,15 @@ export function makePresentationRoutes(trip: TripInput, affectedRouteId?: string
       explanation: `Best balance for ${profile.label}: avoids the roughest section while keeping travel time below the safer route.`,
     },
     {
-      id: 'safer', time: 328, distance: 269.8,
+      id: 'safer', time: 365, distance: 356.9,
       road: 'Smoothest available road sections',
       weather: 'Lowest flood and standing-water exposure',
       temperature: 'Lower heat exposure through shaded sections',
       factors: { travelTime: 68, distance: 62, road: 8, floodWeather: 10, temperature: 20 },
-      explanation: `Lowest road and flood exposure for ${profile.label}, with 18 additional minutes of travel.`,
+      explanation: `Lowest road and flood exposure for ${profile.label}, with 55 additional minutes of travel.`,
     },
     {
-      id: 'fastest', time: 292, distance: 241.7,
+      id: 'fastest', time: 292, distance: 298.8,
       road: 'Rough pavement on two road segments',
       weather: 'Standing water reported on the fastest corridor',
       temperature: 'Highest afternoon heat exposure',

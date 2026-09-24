@@ -196,14 +196,14 @@ function updateRouteOverlay() {
       casing.setAttribute('d', pathData)
       casing.setAttribute('fill', 'none')
       casing.setAttribute('stroke', '#ffffff')
-      casing.setAttribute('stroke-width', isSelected ? '17' : '9')
+      casing.setAttribute('stroke-width', isSelected ? '12' : '6')
       casing.setAttribute('stroke-opacity', isSelected ? '1' : '.1')
       casing.setAttribute('stroke-linecap', 'round')
       casing.setAttribute('stroke-linejoin', 'round')
       line.setAttribute('d', pathData)
       line.setAttribute('fill', 'none')
       line.setAttribute('stroke', categoryColors[route.category] ?? '#0b7a54')
-      line.setAttribute('stroke-width', isSelected ? '11' : '5')
+      line.setAttribute('stroke-width', isSelected ? '7' : '3')
       line.setAttribute('stroke-opacity', isSelected ? '1' : '.14')
       line.setAttribute('stroke-linecap', 'round')
       line.setAttribute('stroke-linejoin', 'round')
@@ -283,6 +283,10 @@ function routeThroughWaypoints(waypoints: MapPoint[], category: RouteOption['cat
   return path
 }
 
+function nearRouteEndpoint(point: MapPoint, endpoint: MapPoint) {
+  return Math.hypot(point[0] - endpoint[0], point[1] - endpoint[1]) < 0.01
+}
+
 function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'source'>): MapPoint[] {
   const baseCoordinates = showPrototypeRoutes.value && !hasMapSelection.value
     ? presentationRouteGeometry[route.category].coordinates
@@ -296,8 +300,13 @@ function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'so
 
   if (!showPrototypeRoutes.value && route.source !== 'api') return []
 
-  // Presentation routes connect every selected stop in order so
-  // points A, B, C and later stops remain visible in the route preview.
+  const followsPresentationCorridor = showPrototypeRoutes.value
+    && waypoints.length === 2
+    && nearRouteEndpoint(waypoints[0]!, coordinates[0]!)
+    && nearRouteEndpoint(waypoints[1]!, coordinates[coordinates.length - 1]!)
+  if (followsPresentationCorridor) return coordinates
+
+  // Other presentation locations still connect every selected stop in order.
   if (waypoints.length > 1) return routeThroughWaypoints(waypoints, route.category)
   const anchor = origin ? coordinates[0]! : coordinates[coordinates.length - 1]!
   return shiftRouteCoordinates(coordinates, waypoints[0]!, anchor)
@@ -382,8 +391,9 @@ function createMarkers(shouldFitBounds = true) {
       .setLngLat([props.currentLocation.longitude, props.currentLocation.latitude]).addTo(instance))
   }
 
+  const selectedLines = routeLines().filter(route => !props.selectedRouteId || route.id === props.selectedRouteId)
   const boundPoints = (hasMapSelection.value || showPrototypeRoutes.value)
-    ? routeLines().flatMap(route => routeCoordinates(route))
+    ? selectedLines.flatMap(route => routeCoordinates(route))
     : []
   if (origin) boundPoints.push(origin)
   destinations.forEach(({ coordinate }) => boundPoints.push(coordinate))
@@ -395,7 +405,15 @@ function createMarkers(shouldFitBounds = true) {
 
   const bounds = new LngLatBounds(boundPoints[0], boundPoints[0])
   for (const point of boundPoints) bounds.extend(point)
-  if (shouldFitBounds) instance.fitBounds(bounds, { padding: 72, maxZoom: showPrototypeRoutes.value && !hasMapSelection.value ? 7.5 : 14, duration: 250 })
+  if (shouldFitBounds) {
+    instance.fitBounds(bounds, {
+      padding: 72,
+      maxZoom: showPrototypeRoutes.value && !hasMapSelection.value ? 7.5 : 14,
+      pitch: props.active ? 38 : 0,
+      bearing: props.active ? -12 : 0,
+      duration: 250,
+    })
+  }
   scheduleRouteOverlayUpdate()
 }
 
@@ -469,9 +487,9 @@ function addRouteLayers(instance: MapInstance) {
         paint: { 'line-color': routeLayer.color, 'line-offset': routeLayer.offset, 'line-width': 10, 'line-opacity': 1 },
       })
     }
-    instance.setPaintProperty(routeLayer.casingId, 'line-width', isSelected ? 16 : 8)
+    instance.setPaintProperty(routeLayer.casingId, 'line-width', isSelected ? 12 : 6)
     instance.setPaintProperty(routeLayer.casingId, 'line-opacity', isSelected ? 1 : 0.08)
-    instance.setPaintProperty(routeLayer.layerId, 'line-width', isSelected ? 10 : 5)
+    instance.setPaintProperty(routeLayer.layerId, 'line-width', isSelected ? 7 : 3)
     instance.setPaintProperty(routeLayer.layerId, 'line-opacity', isSelected ? 1 : 0.14)
   }
 
