@@ -67,9 +67,8 @@ watch(() => props.mode, mode => {
 
 function localMatches(value: string): LocationSuggestion[] {
   const normalized = value.trim().toLowerCase()
-  if (normalized.length < 2) return []
   return props.localSuggestions
-    .filter(place => place.toLowerCase().includes(normalized))
+    .filter(place => !normalized || place.toLowerCase().includes(normalized))
     .slice(0, 6)
     .map((displayName, index) => {
       const coordinates = localPlaceCoordinates[displayName]
@@ -92,7 +91,9 @@ function scheduleSearch(value: string) {
   activeIndex.value = -1
   searchErrorMessage.value = ''
   suggestions.value = props.mode === 'presentation' ? localMatches(value) : []
-  open.value = value.trim().length >= 2
+  open.value = props.mode === 'presentation'
+    ? suggestions.value.length > 0
+    : value.trim().length >= 2
   if (value.trim().length < 2) return
   if (props.mode === 'presentation') return
 
@@ -128,7 +129,7 @@ function handleInput(value: string) {
 
 function handleFocus() {
   focused.value = true
-  if (query.value.trim().length >= 2) {
+  if (props.mode === 'presentation' || query.value.trim().length >= 2) {
     open.value = true
     scheduleSearch(query.value)
   }

@@ -1,11 +1,16 @@
 import { computed, reactive } from 'vue'
-import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
+import { makePresentationRoutes } from '@/data/presentation'
 import type { Coordinates, DetectedHazard, RouteOption, TripInput } from '@/types/aniRoute'
 
 const trip = reactive<TripInput>({
-  ...presentationTrip,
-  cropLoads: presentationTrip.cropLoads.map(crop => ({ ...crop })),
-  deliveryPoints: [...presentationTrip.deliveryPoints],
+  crop: '',
+  quantity: 0,
+  cropLoads: [],
+  unit: 'kg',
+  vehicle: '',
+  origin: '',
+  destination: '',
+  deliveryPoints: [],
 })
 const routes = reactive<RouteOption[]>(makePresentationRoutes(trip))
 const state = reactive({
@@ -21,9 +26,9 @@ const state = reactive({
   uploadMessage: '',
   newRecommendedRouteId: null as string | null,
   apiConnected: false,
-  originCoordinates: { latitude: 16.402, longitude: 120.596 } as Coordinates | null,
-  destinationCoordinates: { latitude: 14.2117, longitude: 121.1653 } as Coordinates | null,
-  deliveryPointCoordinates: [{ latitude: 14.2117, longitude: 121.1653 }] as Array<Coordinates | null>,
+  originCoordinates: null as Coordinates | null,
+  destinationCoordinates: null as Coordinates | null,
+  deliveryPointCoordinates: [] as Array<Coordinates | null>,
 })
 
 const selectedRoute = computed(() => routes.find(route => route.id === state.selectedRouteId) ?? routes[0] ?? null)

@@ -147,6 +147,7 @@ function submitForm() {
             <div class="select-with-icon">
               <Truck :size="17" aria-hidden="true" />
               <select id="vehicle" v-model="trip.vehicle" class="field-control field-control-icon" :aria-invalid="Boolean(errors.vehicle)" aria-describedby="vehicle-error">
+                <option value="" disabled>Choose a vehicle</option>
                 <option v-for="vehicle in vehicleChoices" :key="vehicle.value" :value="vehicle.value">{{ vehicle.label }}</option>
               </select>
               <ChevronDown class="select-chevron" :size="17" aria-hidden="true" />
