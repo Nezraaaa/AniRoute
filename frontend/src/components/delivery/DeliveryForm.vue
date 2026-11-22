@@ -10,19 +10,16 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import LocationSearch from '@/components/delivery/LocationSearch.vue'
-import { presentationDestinations, presentationOrigins } from '@/data/presentation'
-import type { AppMode, LocationSuggestion, TripInput } from '@/types/aniRoute'
+import type { LocationSuggestion, TripInput } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   trip: TripInput
   errors: Record<string, string>
   loading?: boolean
-  mode?: AppMode
-}>(), { mode: 'presentation' })
+}>(), { loading: false })
 const trip = props.trip
 const errors = computed(() => props.errors)
 const loading = computed(() => props.loading)
-const mode = computed(() => props.mode)
 const emit = defineEmits<{
   'find-routes': []
   'location-selected': [field: 'origin' | 'destination', index: number, location: LocationSuggestion]
@@ -159,8 +156,6 @@ function submitForm() {
             <LocationSearch
               id="origin"
               v-model="trip.origin"
-              :mode="mode"
-              :local-suggestions="presentationOrigins"
               placeholder="Enter farm or pickup point"
               :invalid="Boolean(errors.origin)"
               described-by="origin-error"
@@ -185,8 +180,6 @@ function submitForm() {
                   <LocationSearch
                     :id="`destination-${index}`"
                     :model-value="point"
-                    :mode="mode"
-                    :local-suggestions="presentationDestinations"
                     icon="search"
                     placeholder="Search delivery point"
                     :invalid="Boolean(errors[`destination-${index}`])"

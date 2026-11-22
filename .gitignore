@@ -1,4 +1,34 @@
+# Python
 .venv/
 __pycache__/
 .pytest_cache/
 *.py[cod]
+
+# Node / build output
+node_modules/
+dist/
+
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Runtime data written by the API (hazard observations and evidence photos)
+backend/data/*
+!backend/data/.gitkeep
+
+# Machine-learning data and training runs (large; recreated by ml/ scripts)
+ml/data/
+ml/runs/
+runs/
+*.cache
+
+# Model files: commit only the trained Model A weights.
+# The COCO model (yolo11n.pt) is downloaded on first start; exports are rebuilt by ml/export.py.
+backend/models/*
+!backend/models/.gitkeep
+!backend/models/aniroute-hazards-v1.pt
+
+# Generated presentation screenshots are kept; temporary captures are not
+presentation/~$*

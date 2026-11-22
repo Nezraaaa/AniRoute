@@ -2,9 +2,8 @@
 import { computed, createVNode, onBeforeUnmount, onMounted, ref, render, shallowRef, watch } from 'vue'
 import type { GeoJSONSource, LayerSpecification, Map as MapInstance, Marker as MapMarker, StyleSpecification } from 'maplibre-gl'
 import { MapPin, Move } from '@lucide/vue'
-import { presentationRouteGeometry } from '@/data/presentation'
 import { appConfig, defaultCartoStyleUrl, withCartoBasemapKey } from '@/services/config'
-import type { Coordinates, RouteCategory, RouteOption, TripInput } from '@/types/aniRoute'
+import type { Coordinates, RouteOption, TripInput } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   routes: RouteOption[]
@@ -15,8 +14,7 @@ const props = withDefaults(defineProps<{
   destinationCoordinates?: Coordinates | null
   deliveryPointCoordinates?: Array<Coordinates | null>
   active?: boolean
-  prototypeRoutes?: boolean
-}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false, prototypeRoutes: false })
+}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false })
 
 const emit = defineEmits<{
   'point-dragged': [field: 'origin' | 'destination', coordinates: Coordinates, index?: number]
@@ -31,12 +29,8 @@ const draggedPoints = ref<{ origin: [number, number] | null; destinations: Recor
 let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
-let routeOverlay: SVGSVGElement | null = null
-let routeOverlayFrame: number | undefined
 
 const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e' }
-const showPrototypeRoutes = computed(() => props.prototypeRoutes)
-const prototypeCategoryOrder: RouteCategory[] = ['optimal', 'safer', 'fastest']
 const routeLayerDefinitions = [
   { category: 'optimal' as const, sourceId: 'route-optimal-source', casingId: 'route-optimal-casing', layerId: 'route-optimal', color: '#0b7a54', offset: 0 },
   { category: 'safer' as const, sourceId: 'route-safer-source', casingId: 'route-safer-casing', layerId: 'route-safer', color: '#2563eb', offset: 0 },
@@ -76,22 +70,10 @@ function uniqueRoutes() {
 }
 
 function routeLines(): Array<Pick<RouteOption, 'id' | 'category' | 'geometry' | 'source'>> {
-  if (!showPrototypeRoutes.value) return uniqueRoutes().filter(route => route.source === 'api')
-
-  const routes = uniqueRoutes()
-  return prototypeCategoryOrder.map(category => routes.find(route => route.category === category) ?? {
-    id: `prototype-${category}`,
-    category,
-    geometry: presentationRouteGeometry[category],
-    source: 'presentation' as const,
-  })
+  return uniqueRoutes()
 }
 
 function routeGeoJson() {
-  if (!hasMapSelection.value && !showPrototypeRoutes.value) {
-    return { type: 'FeatureCollection' as const, features: [] }
-  }
-
   return {
     type: 'FeatureCollection' as const,
     features: routeLines().map(route => ({
@@ -108,7 +90,7 @@ function routeGeoJson() {
   }
 }
 
-function routeGeoJsonFor(category: RouteCategory) {
+function routeGeoJsonFor(category: RouteOption['category']) {
   const features = routeGeoJson().features.filter(feature => feature.properties.category === category)
   return { type: 'FeatureCollection' as const, features }
 }
@@ -124,98 +106,6 @@ const philippinesMapView = {
   zoom: 4.8,
   pitch: 46,
   bearing: -10,
-}
-
-const prototypeMapView = {
-  center: [120.9, 15.3] as MapPoint,
-  zoom: 6.2,
-  pitch: 34,
-  bearing: -8,
-}
-
-function removeRouteOverlay() {
-  if (routeOverlayFrame !== undefined) {
-    window.cancelAnimationFrame(routeOverlayFrame)
-    routeOverlayFrame = undefined
-  }
-  routeOverlay?.remove()
-  routeOverlay = null
-}
-
-function ensureRouteOverlay(instance: MapInstance) {
-  const canvasContainer = instance.getCanvasContainer()
-  if (!routeOverlay || routeOverlay.parentElement !== canvasContainer) {
-    routeOverlay?.remove()
-    routeOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    routeOverlay.classList.add('map-route-overlay')
-    routeOverlay.setAttribute('aria-hidden', 'true')
-    routeOverlay.setAttribute('focusable', 'false')
-    routeOverlay.style.pointerEvents = 'none'
-    routeOverlay.style.position = 'absolute'
-    routeOverlay.style.inset = '0'
-    routeOverlay.style.width = '100%'
-    routeOverlay.style.height = '100%'
-    routeOverlay.style.zIndex = '1'
-    canvasContainer.appendChild(routeOverlay)
-  }
-  return routeOverlay
-}
-
-function updateRouteOverlay() {
-  routeOverlayFrame = undefined
-  const instance = map.value
-  if (!instance || !mapReady.value || !showPrototypeRoutes.value) {
-    removeRouteOverlay()
-    return
-  }
-
-  const mapContainer = instance.getContainer()
-  const canvasRect = instance.getCanvas().getBoundingClientRect()
-  const overlay = ensureRouteOverlay(instance)
-  const width = Math.max(Math.round(canvasRect.width || mapContainer.clientWidth), 1)
-  const height = Math.max(Math.round(canvasRect.height || mapContainer.clientHeight), 1)
-  overlay.setAttribute('viewBox', `0 0 ${width} ${height}`)
-  overlay.setAttribute('width', String(width))
-  overlay.setAttribute('height', String(height))
-  overlay.style.width = `${width}px`
-  overlay.style.height = `${height}px`
-
-  const groups = routeLines()
-    .sort((left, right) => Number(left.id === props.selectedRouteId) - Number(right.id === props.selectedRouteId))
-    .map(route => {
-      const isSelected = route.id === props.selectedRouteId
-      const pathData = routeCoordinates(route)
-        .map((coordinate, index) => {
-          const point = instance.project(coordinate)
-          return `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
-        })
-        .join(' ')
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-      const casing = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      casing.setAttribute('d', pathData)
-      casing.setAttribute('fill', 'none')
-      casing.setAttribute('stroke', '#ffffff')
-      casing.setAttribute('stroke-width', isSelected ? '12' : '6')
-      casing.setAttribute('stroke-opacity', isSelected ? '1' : '.1')
-      casing.setAttribute('stroke-linecap', 'round')
-      casing.setAttribute('stroke-linejoin', 'round')
-      line.setAttribute('d', pathData)
-      line.setAttribute('fill', 'none')
-      line.setAttribute('stroke', categoryColors[route.category] ?? '#0b7a54')
-      line.setAttribute('stroke-width', isSelected ? '7' : '3')
-      line.setAttribute('stroke-opacity', isSelected ? '1' : '.14')
-      line.setAttribute('stroke-linecap', 'round')
-      line.setAttribute('stroke-linejoin', 'round')
-      group.append(casing, line)
-      return group
-    })
-  overlay.replaceChildren(...groups)
-}
-
-function scheduleRouteOverlayUpdate() {
-  if (routeOverlayFrame !== undefined) return
-  routeOverlayFrame = window.requestAnimationFrame(updateRouteOverlay)
 }
 
 function pointFromCoordinates(value: Coordinates | null | undefined): MapPoint | null {
@@ -254,68 +144,33 @@ function selectedWaypoints() {
 
 const hasMapSelection = computed(() => selectedWaypoints().length > 0)
 
-function shiftRouteCoordinates(coordinates: MapPoint[], target: MapPoint, anchor: MapPoint): MapPoint[] {
-  const longitudeDelta = target[0] - anchor[0]
-  const latitudeDelta = target[1] - anchor[1]
-  return coordinates.map(([longitude, latitude]) => [longitude + longitudeDelta, latitude + latitudeDelta])
-}
-
-function routeThroughWaypoints(waypoints: MapPoint[], category: RouteOption['category']): MapPoint[] {
-  if (waypoints.length < 2) return waypoints
-  const categoryBend = category === 'safer' ? 0.06 : category === 'fastest' ? -0.045 : 0.018
-  const path: MapPoint[] = [waypoints[0]!]
-
-  for (let index = 0; index < waypoints.length - 1; index += 1) {
-    const start = waypoints[index]!
-    const end = waypoints[index + 1]!
-    const delta: MapPoint = [end[0] - start[0], end[1] - start[1]]
-    const length = Math.hypot(delta[0], delta[1])
-    if (length < 0.000001) {
-      path.push(end)
-      continue
-    }
-    const midpoint: MapPoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2]
-    const normal: MapPoint = [-delta[1] / length, delta[0] / length]
-    const bend = categoryBend * (index % 2 === 0 ? 1 : -1)
-    path.push([midpoint[0] + normal[0] * length * bend, midpoint[1] + normal[1] * length * bend])
-    path.push(end)
-  }
-  return path
-}
-
-function nearRouteEndpoint(point: MapPoint, endpoint: MapPoint) {
-  return Math.hypot(point[0] - endpoint[0], point[1] - endpoint[1]) < 0.01
-}
-
-function routeCoordinates(route: Pick<RouteOption, 'category' | 'geometry' | 'source'>): MapPoint[] {
-  const baseCoordinates = showPrototypeRoutes.value && !hasMapSelection.value
-    ? presentationRouteGeometry[route.category].coordinates
-    : route.geometry.coordinates
-  const coordinates = baseCoordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
-  if (!coordinates.length) return coordinates
-
-  const { origin } = selectedMapPoints()
-  const waypoints = selectedWaypoints()
-  if (!waypoints.length) return showPrototypeRoutes.value ? coordinates : []
-
-  if (!showPrototypeRoutes.value && route.source !== 'api') return []
-
-  const followsPresentationCorridor = showPrototypeRoutes.value
-    && waypoints.length === 2
-    && nearRouteEndpoint(waypoints[0]!, coordinates[0]!)
-    && nearRouteEndpoint(waypoints[1]!, coordinates[coordinates.length - 1]!)
-  if (followsPresentationCorridor) return coordinates
-
-  // Other presentation locations still connect every selected stop in order.
-  if (waypoints.length > 1) return routeThroughWaypoints(waypoints, route.category)
-  const anchor = origin ? coordinates[0]! : coordinates[coordinates.length - 1]!
-  return shiftRouteCoordinates(coordinates, waypoints[0]!, anchor)
+function routeCoordinates(route: Pick<RouteOption, 'geometry'>): MapPoint[] {
+  return route.geometry.coordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
 }
 
 function makeLabel(text: string, className: string) {
   const node = document.createElement('span')
   node.className = `map-marker ${className}`
   node.textContent = text
+  return node
+}
+
+const hazardMarkerColors: Record<string, string> = {
+  pothole: '#F59E0B', severe_road_damage: '#DC2626', standing_water: '#2563EB', road_obstruction: '#7C3AED',
+}
+
+function makeHazardMarker(name: string, note: string, hazardType?: string) {
+  const node = document.createElement('span')
+  node.className = 'map-hazard-marker'
+  node.style.setProperty('--hazard-color', hazardMarkerColors[hazardType ?? ''] ?? (/water/i.test(name) ? '#2563EB' : '#B45309'))
+  node.setAttribute('role', 'img')
+  node.setAttribute('aria-label', `${name}: ${note}`)
+  node.title = `${name} · ${note}`
+  node.textContent = '!'
+  const label = document.createElement('span')
+  label.className = 'map-hazard-label'
+  label.textContent = name
+  node.append(label)
   return node
 }
 
@@ -391,30 +246,35 @@ function createMarkers(shouldFitBounds = true) {
       .setLngLat([props.currentLocation.longitude, props.currentLocation.latitude]).addTo(instance))
   }
 
+  // Known and camera-confirmed hazards (one pin per observation, even if several routes pass it).
+  const pinned = new Set<string>()
+  for (const route of props.routes) {
+    for (const hazard of route.knownHazards ?? []) {
+      if (pinned.has(hazard.id)) continue
+      pinned.add(hazard.id)
+      markers.push(new Marker({ element: makeHazardMarker(hazard.name, hazard.note, hazard.hazardType), anchor: 'bottom' })
+        .setLngLat([hazard.coordinates.longitude, hazard.coordinates.latitude]).addTo(instance))
+    }
+  }
+
   const selectedLines = routeLines().filter(route => !props.selectedRouteId || route.id === props.selectedRouteId)
-  const boundPoints = (hasMapSelection.value || showPrototypeRoutes.value)
-    ? selectedLines.flatMap(route => routeCoordinates(route))
-    : []
+  const boundPoints = selectedLines.flatMap(route => routeCoordinates(route))
   if (origin) boundPoints.push(origin)
   destinations.forEach(({ coordinate }) => boundPoints.push(coordinate))
   if (props.currentLocation) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
-  if (!boundPoints.length || !shouldFitBounds) {
-    scheduleRouteOverlayUpdate()
-    return
-  }
+  if (!boundPoints.length || !shouldFitBounds) return
 
   const bounds = new LngLatBounds(boundPoints[0], boundPoints[0])
   for (const point of boundPoints) bounds.extend(point)
   if (shouldFitBounds) {
     instance.fitBounds(bounds, {
       padding: 72,
-      maxZoom: showPrototypeRoutes.value && !hasMapSelection.value ? 7.5 : 14,
+      maxZoom: 14,
       pitch: props.active ? 38 : 0,
       bearing: props.active ? -12 : 0,
       duration: 250,
     })
   }
-  scheduleRouteOverlayUpdate()
 }
 
 function resetToNeutralView(instance: MapInstance) {
@@ -425,7 +285,6 @@ function initialMapView() {
   const { origin, deliveries } = selectedMapPoints()
   const currentLocation = pointFromCoordinates(props.currentLocation)
   const anchor = origin ?? deliveries[0]?.coordinate ?? currentLocation
-  if (!anchor && showPrototypeRoutes.value) return prototypeMapView
   return anchor
     ? { center: anchor, zoom: 9.6, pitch: 42, bearing: -12 }
     : philippinesMapView
@@ -512,7 +371,6 @@ function markStyleReady(instance: MapInstance) {
   add3dBuildings(instance)
   addRouteLayers(instance)
   createMarkers()
-  scheduleRouteOverlayUpdate()
 }
 
 function switchToRasterFallback(instance: MapInstance) {
@@ -536,14 +394,17 @@ function updateRoutes(shouldFitBounds = true) {
   addRouteLayers(instance)
   instance.triggerRepaint()
   createMarkers(shouldFitBounds)
-  scheduleRouteOverlayUpdate()
-  if (!hasMapSelection.value && !props.currentLocation && !showPrototypeRoutes.value) resetToNeutralView(instance)
+  if (!hasMapSelection.value && !props.currentLocation && !routeLines().length) resetToNeutralView(instance)
 }
 
 async function initializeMap() {
   if (!mapElement.value) return
   try {
     mapLibreModule = await import('maplibre-gl')
+    // MapLibre 6 looks for its worker next to its own bundle, a file Vite never emits; without a worker
+    // the GeoJSON route sources never load. Point it at the worker bundled by Vite instead.
+    const { default: workerUrl } = await import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url')
+    mapLibreModule.setWorkerUrl(workerUrl)
     if (!mapElement.value) return
     const { Map: MapLibreMap, NavigationControl } = mapLibreModule
     const initialView = initialMapView()
@@ -563,11 +424,6 @@ async function initializeMap() {
     const syncMapLayers = () => markStyleReady(instance)
     instance.on('style.load', syncMapLayers)
     instance.on('load', syncMapLayers)
-    instance.on('move', scheduleRouteOverlayUpdate)
-    instance.on('resize', scheduleRouteOverlayUpdate)
-    instance.on('zoom', scheduleRouteOverlayUpdate)
-    instance.on('rotate', scheduleRouteOverlayUpdate)
-    instance.on('pitch', scheduleRouteOverlayUpdate)
     instance.on('error', () => {
       if (!mapReady.value) switchToRasterFallback(instance)
     })
@@ -586,10 +442,9 @@ watch(() => props.routes, () => {
 watch(() => [props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => {
   draggedPoints.value = { origin: null, destinations: {} }
 }, { deep: true })
-watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates, props.prototypeRoutes], () => updateRoutes(), { deep: true })
+watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => updateRoutes(), { deep: true })
 onBeforeUnmount(() => {
   if (styleFailureTimer) window.clearTimeout(styleFailureTimer)
-  removeRouteOverlay()
   markers.forEach(marker => marker.remove())
   map.value?.remove()
   map.value = null
@@ -611,7 +466,7 @@ onBeforeUnmount(() => {
         <span>Route choices remain available below.</span>
       </div>
       <div v-if="!unavailable && !mapReady" class="map-loading" role="status">Loading map…</div>
-      <div v-if="!unavailable && mapReady && !hasMapSelection && !currentLocation && !showPrototypeRoutes" class="map-empty-state" role="status">
+      <div v-if="!unavailable && mapReady && !hasMapSelection && !currentLocation && !routeLines().length" class="map-empty-state" role="status">
         <MapPin :size="19" aria-hidden="true" />
         <div>
           <strong>Choose pickup and delivery points</strong>
@@ -619,7 +474,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : showPrototypeRoutes ? 'The presentation corridor is ready. Select locations to place draggable pins.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
+    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
     <div class="map-legend" aria-label="Route color legend">
       <span><i class="legend-line legend-optimal"></i> Recommended route</span>
       <span><i class="legend-line legend-safer"></i> Safer route</span>
@@ -628,7 +483,7 @@ onBeforeUnmount(() => {
     <p class="map-attribution map-attribution-links">
       &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>
       &middot; &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-      &middot; {{ showPrototypeRoutes ? 'Routes follow the selected agricultural corridor.' : 'Live road directions are supplied by the backend.' }}
+      &middot; Road directions by OSRM.
     </p>
   </section>
 </template>

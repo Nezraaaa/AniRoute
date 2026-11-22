@@ -55,13 +55,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .brand-lockup { display: flex; min-width: 0; align-items: center; }
 .brand-logo { display: block; width: 178px; height: 54px; object-fit: contain; object-position: left center; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
-.mode-switch { display: inline-flex; align-items: center; gap: 8px; }
-.mode-switch-label { color: #68766b; font-size: 11px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
-.mode-switch-control { display: inline-flex; padding: 3px; border: 1px solid #d7e0d6; border-radius: 12px; background: #f2f5f0; }
-.mode-switch-option { min-width: 52px; min-height: 34px; padding: 6px 11px; border: 0; border-radius: 9px; color: #637168; background: transparent; font-size: 12px; font-weight: 750; transition: color .16s ease, background-color .16s ease, box-shadow .16s ease; }
-.mode-switch-option:hover { color: var(--green-900); background: #e4eee5; }
-.mode-switch-option-active { color: #fff; background: var(--green-800); box-shadow: 0 2px 6px rgba(28, 84, 57, .18); }
-.mode-switch-option-active:hover { color: #fff; background: var(--green-900); }
 .topbar-badge { color: #415348 !important; background: #eef3ed !important; }
 .app-main { width: min(100%, 1540px); margin: 0 auto; padding: 26px 28px 40px; }
 .app-footer {
@@ -162,10 +155,10 @@ select.field-control {
 .results-topline { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
 .results-topline h2 { margin: 0; color: var(--green-950); font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -.025em; }
 .options-count { display: inline-flex; align-items: center; gap: 6px; color: #5e6b61; font-size: 13px; font-weight: 600; }
-.presentation-banner { margin-bottom: 14px; }
-.presentation-banner > svg { flex: 0 0 auto; margin-top: 2px; }
-.presentation-banner strong, .empty-routes strong { font-weight: 750; }
-.presentation-banner p, .empty-routes p { margin: 2px 0 0; font-size: 13px; }
+.route-info-banner { margin-bottom: 14px; }
+.route-info-banner > svg { flex: 0 0 auto; margin-top: 2px; }
+.route-info-banner strong, .empty-routes strong { font-weight: 750; }
+.route-info-banner p, .empty-routes p { margin: 2px 0 0; font-size: 13px; }
 .form-error-banner { padding: 12px 14px; border-radius: 12px; color: #8c2e27; background: #fff1ef; font-size: 14px; }
 .map-column, .route-choice-column { min-width: 0; }
 .route-choice-column { position: relative; z-index: 3; margin-bottom: 24px; padding: 16px; border: 1px solid #dfe5dc; border-radius: 18px; background: #fff; box-shadow: 0 1px 2px rgba(20, 35, 22, .04); }
@@ -307,13 +300,6 @@ select.field-control {
 .camera-placeholder span { max-width: 180px; color: #bec9bf; font-size: 10px; line-height: 1.4; }
 .camera-loading { position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; color: white; background: rgba(18,29,21,.45); font-size: 12px; }
 .camera-live-tag { position: absolute; top: 9px; left: 9px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border-radius: 999px; color: #fff; background: rgba(19,33,24,.73); font-size: 9px; font-weight: 700; }
-.presentation-road-feed { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(#9cc9de 0 42%, #71925d 42% 54%, #5b605d 54%); }
-.road-horizon { position: absolute; left: 10%; right: 10%; top: 36%; height: 12%; border-radius: 50%; background: #547c43; box-shadow: -80px 8px 0 #456f39, 90px 5px 0 #648a4f; }
-.road-surface { position: absolute; left: 7%; right: 7%; bottom: -2%; height: 60%; background: #555b5b; clip-path: polygon(43% 0, 57% 0, 100% 100%, 0 100%); }
-.road-center-line { position: absolute; left: 49%; top: 8%; width: 2%; height: 92%; background: repeating-linear-gradient(to bottom, #f5d86b 0 18px, transparent 18px 38px); transform: perspective(120px) rotateX(12deg); }
-.road-hazard-shape { position: absolute; z-index: 2; left: 53%; bottom: 28%; width: 18%; height: 7%; border: 3px solid #ffb020; border-radius: 50%; background: #303536; box-shadow: 0 0 0 999px rgba(0,0,0,.04); }
-.camera-finding-tag { position: absolute; right: 8px; bottom: 8px; padding: 5px 7px; border-radius: 5px; color: #442800; background: #ffcf80; font-size: 8px; font-weight: 900; letter-spacing: .04em; }
-.detection-outline { position: absolute; top: 35%; left: 29%; width: 43%; height: 18%; border: 2px solid #ffcf80; border-radius: 7px; box-shadow: 0 0 0 999px rgba(21, 27, 22, .08); }
 .camera-status-copy { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 9px; }
 .camera-state-copy, .supported-hazards, .camera-error-copy { margin: 0; color: #657167; font-size: 11px; line-height: 1.45; }
 .supported-hazards strong { color: #455249; }
@@ -425,9 +411,7 @@ select.field-control {
 
   .brand-logo { width: min(150px, 44vw); height: 46px; }
   .topbar-actions { min-width: 0; gap: 7px; }
-  .mode-switch-label, .topbar-badge { display: none; }
-  .mode-switch-control { padding: 2px; }
-  .mode-switch-option { min-width: 45px; min-height: 34px; padding: 6px 8px; font-size: 11px; }
+  .topbar-badge { display: none; }
 
   .page-heading {
     align-items: stretch;
@@ -471,7 +455,7 @@ select.field-control {
 
   .results-topline h2 { font-size: 23px; }
   .options-count { align-self: flex-start; }
-  .presentation-banner { margin-bottom: 16px; }
+  .route-info-banner { margin-bottom: 16px; }
   .route-choice-column { margin-bottom: 20px; padding: 12px; }
   .route-choice-heading { min-height: 58px; padding: 2px 3px 14px; }
   .map-card { border-radius: 16px; }
@@ -534,7 +518,7 @@ select.field-control {
   .plan-page .page-heading { margin-bottom: 16px; }
   .plan-page .page-heading h1 { font-size: clamp(26px, 2.5vw, 32px); }
   .plan-page .results-column { margin-top: -4px; }
-  .plan-page .presentation-banner { margin-bottom: 12px; padding: 11px 13px; }
+  .plan-page .route-info-banner { margin-bottom: 12px; padding: 11px 13px; }
   .plan-page .route-choice-column { margin-bottom: 16px; padding: 12px; }
   .plan-page .route-choice-heading { min-height: 50px; padding: 1px 2px 11px; }
   .plan-page .route-choice-panel { padding-top: 12px; }
@@ -551,4 +535,85 @@ select.field-control {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Reference walkthrough refinements: compact planner chrome, visible route scoring,
+   and a camera-first sensor surface for the active trip. */
+.app-topbar {
+  height: 64px;
+  border-bottom-color: #dfe6df;
+}
+.brand-logo { width: 148px; height: 48px; }
+.app-main { padding-top: 24px; }
+.route-info-banner {
+  border-color: #cde5d2 !important;
+  color: #1e5b3e !important;
+  background: #edf8ef !important;
+  box-shadow: none;
+}
+.route-info-banner > svg { color: #287451; }
+.route-info-banner p { color: #527160; }
+.route-choice-column { border-color: #d8e4d9; border-radius: 16px; box-shadow: 0 4px 16px rgba(31, 76, 48, .045); }
+.route-choice-panel { padding-top: 12px; }
+.route-list { gap: 12px; }
+.route-option { opacity: .82; border-color: #dfe6df; transition: border-color .16s ease, box-shadow .16s ease, opacity .16s ease, transform .16s ease; }
+.route-option:hover, .route-option:focus-within { opacity: 1; transform: translateY(-1px); }
+.route-option-selected { opacity: 1; border-color: #287451; box-shadow: 0 0 0 2px rgba(39, 112, 78, .13), 0 7px 18px rgba(24, 66, 39, .08); }
+.route-select-button { min-height: 128px; padding: 14px; }
+.route-topline { min-height: 48px; }
+.route-card-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf1eb; }
+.route-card-metric { display: grid; min-width: 0; grid-template-columns: 16px minmax(0, 1fr); gap: 1px 5px; align-items: center; color: #6b786e; }
+.route-card-metric svg { grid-row: span 2; color: #5d8068; }
+.route-card-metric strong { overflow: hidden; color: #29372d; font-size: 12px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.route-card-metric small { color: #7b887e; font-size: 9px; line-height: 1.2; }
+.route-card-risk-lower svg { color: #1b8054; }
+.route-card-risk-moderate svg { color: #b47714; }
+.route-card-risk-higher svg { color: #bd4c3b; }
+.route-recommended-badge { font-size: 10px; }
+.map-column { gap: 10px; }
+.map-card { border-color: #d8e4d9; border-radius: 16px; box-shadow: 0 4px 16px rgba(31, 76, 48, .045); }
+.selection-tip { padding-top: 8px; }
+
+.camera-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sensor-edge-status, .camera-sensor-meta { display: inline-flex; align-items: center; gap: 6px; color: #7e9585; font-size: 9px; font-weight: 800; letter-spacing: .06em; line-height: 1.2; text-transform: uppercase; }
+.sensor-status-dot, .sensor-live-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #53bd7b; box-shadow: 0 0 0 3px rgba(83, 189, 123, .13); }
+.camera-sensor-meta { justify-content: space-between; width: 100%; margin-bottom: -3px; color: #88a08e; }
+.sensor-live-label { display: inline-flex; align-items: center; gap: 6px; }
+.live-trip .camera-status-card { border-color: #2d4537; color: #e7f0e7; background: #17251e; box-shadow: 0 12px 28px rgba(16, 37, 24, .16); }
+.live-trip .camera-status-card [data-slot="card-title"] { color: #f4faf4; }
+.live-trip .camera-status-card [data-slot="card-description"] { color: #b0c1b4; }
+.live-trip .camera-status-card .section-icon { color: #d5f0dc; background: #24543d; }
+.live-trip .camera-status-card .section-icon-active { color: #fff; background: #1e7a50; }
+.live-trip .camera-status-card .camera-state-copy,
+.live-trip .camera-status-card .supported-hazards,
+.live-trip .camera-status-card .camera-analysis-note { color: #b2c2b5; }
+.live-trip .camera-status-card .supported-hazards strong { color: #e2eee3; }
+.camera-status-content { grid-template-columns: minmax(0, 1fr); }
+.camera-status-card .camera-preview { width: 100%; max-width: none; aspect-ratio: 16 / 9; }
+.app-topbar, .app-main, .app-footer { min-width: 0; }
+.brand-lockup, .topbar-actions, .planner-layout > *, .delivery-card, .delivery-card .field-grid { min-width: 0; max-width: 100%; }
+.brand-logo { max-width: 100%; }
+.delivery-card { width: 100%; }
+.delivery-card [data-slot="card-header"] > div { width: 100%; min-width: 0; }
+.delivery-card [data-slot="card-header"] > div > div,
+.camera-card-heading > div > div { min-width: 0; }
+.delivery-card [data-slot="card-description"] { overflow-wrap: anywhere; }
+html, body { overflow-x: hidden; }
+
+@media (max-width: 860px) {
+  .route-list { gap: 14px; }
+  .route-select-button { min-height: 126px; }
+}
+
+@media (max-width: 560px) {
+  .app-topbar { min-height: 60px; padding-top: 7px; padding-bottom: 7px; }
+  .brand-logo { width: min(138px, 42vw); height: 42px; }
+  .app-main { padding-top: 18px; }
+  .route-select-button { min-height: 124px; padding: 14px; }
+  .route-card-title { font-size: 15px; }
+  .route-card-metrics { gap: 6px; }
+  .route-card-metric strong { font-size: 11px; }
+  .camera-card-heading { gap: 8px; }
+  .sensor-edge-status { max-width: 116px; text-align: right; }
+  .camera-sensor-meta { align-items: flex-start; flex-direction: column; gap: 5px; }
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calculateRoutes, recalculateRoute } from '@/services/routes'
 import { confirmHazard, scanCameraFrame } from '@/services/hazards'
-import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
+import { defaultTrip } from '@/composables/useAniRouteStore'
 import type { DetectedHazard } from '@/types/aniRoute'
 
 function jsonResponse(body: unknown, ok = true) {
@@ -14,54 +14,6 @@ afterEach(() => {
 })
 
 describe('route service adapter', () => {
-  it('changes route ranking when crop sensitivity changes', () => {
-    const tomatoRoutes = makePresentationRoutes(presentationTrip)
-    const riceRoutes = makePresentationRoutes({
-      ...presentationTrip,
-      crop: 'Rice',
-      cropLoads: [{ name: 'Rice', quantity: 250 }],
-    })
-
-    expect(tomatoRoutes.find(route => route.recommended)?.id).toBe('optimal')
-    expect(riceRoutes.find(route => route.recommended)?.id).toBe('fastest')
-    expect(tomatoRoutes.find(route => route.id === 'fastest')?.cropRiskScore)
-      .not.toBe(riceRoutes.find(route => route.id === 'fastest')?.cropRiskScore)
-  })
-
-  it('raises the affected road factor and recommends the new lowest-risk route', () => {
-    const routes = makePresentationRoutes(presentationTrip, 'optimal')
-
-    expect(routes.find(route => route.id === 'optimal')?.riskFactors.road).toBe(56)
-    expect(routes.find(route => route.recommended)?.id).toBe('safer')
-  })
-
-  it('updates presentation estimates for edited trips and keeps the corridor geometry stable', () => {
-    const baseline = makePresentationRoutes(presentationTrip)
-    const edited = makePresentationRoutes({
-      ...presentationTrip, crop: 'Leafy vegetables', quantity: 500, vehicle: 'Medium truck',
-      origin: 'Baguio farm pickup point', destination: 'Calamba, Laguna trading post',
-    })
-
-    expect(edited[0]?.travelTimeMinutes).toBeGreaterThan(baseline[0]!.travelTimeMinutes)
-    expect(edited[0]?.distanceKm).toBe(baseline[0]!.distanceKm)
-    expect(edited[0]?.cropRiskScore).toBeGreaterThan(baseline[0]!.cropRiskScore!)
-    expect(edited[0]?.geometry).toEqual(baseline[0]?.geometry)
-    expect(baseline.every(route => route.geometry.coordinates.length > 200)).toBe(true)
-    expect(baseline.every(route => (route.geometry.coordinates[0]?.[1] ?? 0) > 16.39)).toBe(true)
-    expect(baseline.every(route => (route.geometry.coordinates.at(-1)?.[1] ?? 90) < 14.22)).toBe(true)
-  })
-
-  it('keeps presentation mode local instead of requesting a route service', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-
-    const result = await calculateRoutes(presentationTrip, 'presentation')
-
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(result.source).toBe('presentation')
-    expect(result.routes.map(route => route.category)).toEqual(['optimal', 'safer', 'fastest'])
-  })
-
   it('maps route categories and explanations from the backend', async () => {
     const route = {
       route_id: 'optimal', category: 'optimal',
@@ -76,7 +28,7 @@ describe('route service adapter', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await calculateRoutes(presentationTrip)
+    const result = await calculateRoutes(defaultTrip)
 
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(result.routes[0]).toMatchObject({ id: 'optimal', category: 'optimal', travelTimeMinutes: 52, cropRiskLabel: 'lower' })
@@ -87,21 +39,21 @@ describe('route service adapter', () => {
   it('shows a clear live integration error when the API is offline', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
 
-    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('connected route service is unavailable')
+    await expect(calculateRoutes(defaultTrip)).rejects.toThrow('connected route service is unavailable')
   })
 
-  it('shows backend request errors instead of masking them as demo routes', async () => {
+  it('shows backend request errors to the user', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Trip could not be calculated.' }, false)))
 
-    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('Trip could not be calculated.')
+    await expect(calculateRoutes(defaultTrip)).rejects.toThrow('Trip could not be calculated.')
   })
 
   it('rejects non-production route data while connected mode is active', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
-      routes: [], data_source: 'presentation', recommended_route_id: 'optimal',
+      routes: [], data_source: 'sample', recommended_route_id: 'optimal',
     })))
 
-    await expect(calculateRoutes(presentationTrip)).rejects.toThrow('did not return production route data')
+    await expect(calculateRoutes(defaultTrip)).rejects.toThrow('did not return live route data')
   })
 
   it('uses the recalculation endpoint after a hazard confirmation', async () => {
@@ -118,7 +70,7 @@ describe('route service adapter', () => {
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await recalculateRoute(presentationTrip, 'optimal', {
+    const result = await recalculateRoute(defaultTrip, 'optimal', {
       type: 'pothole', roadSegmentId: 'optimal-segment-2', observationId: 'observation-1',
     })
 
@@ -131,23 +83,42 @@ describe('route service adapter', () => {
 })
 
 describe('hazard service adapter', () => {
-  it('sends small active-route frames only to an available scanner contract', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detection_available: false, detection: null }))
+  it('sends active-route frames with the geotag and reports when no detector is loaded', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ detection_available: false, detection: null, detections: [], data_source: 'api' }))
     vi.stubGlobal('fetch', fetchMock)
     const frame = 'data:image/jpeg;base64,/9j/AA=='
 
-    expect(await scanCameraFrame('optimal', frame, { latitude: 14.48, longitude: 121.02 })).toBeNull()
+    const result = await scanCameraFrame('optimal', frame, { latitude: 14.48, longitude: 121.02 })
+    expect(result.available).toBe(false)
+    expect(result.hazard).toBeNull()
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       route_id: 'optimal', frame_data_url: frame, latitude: 14.48, longitude: 121.02,
     })
   })
 
-  it('keeps presentation camera frames local instead of requesting the scanner API', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+  it('maps overlay boxes and a smoothed, confirmed detection from the scanner', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      detection_available: true,
+      data_source: 'api',
+      detections: [{
+        id: 'd1', hazard_type: 'road_obstruction', label: 'Road obstruction (cow)', source_label: 'cow',
+        confidence: 0.88, box: [10, 20, 110, 220], box_norm: [0.1, 0.2, 0.5, 0.9], model: 'B',
+      }],
+      detection: {
+        detection_id: 'd1', hazard_type: 'road_obstruction', label: 'Road obstruction (cow)', source_label: 'cow', model: 'B',
+        detected_at: '2026-11-22T10:00:00Z', confidence: 0.88, latitude: 14.2, longitude: 121.1,
+        route_id: 'route-1', road_segment_id: 'route-1@14.2000,121.1000', distance_ahead_km: null, frames_seen: 2,
+      },
+      evidence_frame_data_url: 'data:image/jpeg;base64,ZXZpZGVuY2U=',
+    })))
 
-    expect(await scanCameraFrame('optimal', 'data:image/jpeg;base64,/9j/AA==', null, 'presentation')).toBeNull()
-    expect(fetchMock).not.toHaveBeenCalled()
+    const result = await scanCameraFrame('route-1', 'data:image/jpeg;base64,/9j/AA==', { latitude: 14.2, longitude: 121.1 })
+    expect(result.detections[0]).toMatchObject({ hazardType: 'road_obstruction', sourceLabel: 'cow', boxNorm: [0.1, 0.2, 0.5, 0.9], model: 'B' })
+    expect(result.hazard).toMatchObject({
+      type: 'road_obstruction', simulated: false, model: 'B', sourceLabel: 'cow', framesSeen: 2,
+      coordinates: { latitude: 14.2, longitude: 121.1 }, distanceAheadKm: undefined,
+    })
+    expect(result.evidenceFrame).toBe('data:image/jpeg;base64,ZXZpZGVuY2U=')
   })
 
   it('sends the geotag and evidence only when confirmation is called', async () => {
@@ -171,20 +142,6 @@ describe('hazard service adapter', () => {
     })
     expect(payload.evidence_frame_data_url).toBe('data:image/jpeg;base64,aGVsbG8=')
     expect(result).toMatchObject({ id: 'saved-1', status: 'uploaded', source: 'api', evidenceStored: true })
-  })
-
-  it('keeps the presentation camera confirmation disconnected from the backend', async () => {
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    const hazard: DetectedHazard = {
-      id: 'demo-cv-1', type: 'road_obstruction', detectedAt: '2026-09-20T12:30:00.000Z',
-      routeId: 'optimal', roadSegmentId: 'optimal-demo-vision-1', simulated: true,
-    }
-
-    const result = await confirmHazard(hazard, undefined, 'presentation')
-
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ status: 'uploaded', source: 'local_presentation', evidenceStored: false })
   })
 
   it('does not label a rejected backend upload as successful', async () => {

@@ -1,5 +1,5 @@
 import { apiUrl, appConfig } from './config'
-import type { AppMode, LocationSuggestion } from '@/types/aniRoute'
+import type { LocationSuggestion } from '@/types/aniRoute'
 
 interface GeocodingResponseItem {
   place_id?: number | string
@@ -11,10 +11,9 @@ interface GeocodingResponseItem {
   type?: string
 }
 
-export async function searchLocations(query: string, signal?: AbortSignal, mode: AppMode = 'live'): Promise<LocationSuggestion[]> {
+export async function searchLocations(query: string, signal?: AbortSignal): Promise<LocationSuggestion[]> {
   const trimmedQuery = query.trim()
   if (trimmedQuery.length < 2) return []
-  if (mode === 'presentation') return []
 
   const params = new URLSearchParams({ q: trimmedQuery, limit: '6' })
   let response: Response

@@ -1,27 +1,37 @@
 import { computed, reactive } from 'vue'
-import { makePresentationRoutes, presentationTrip } from '@/data/presentation'
 import type { Coordinates, DetectedHazard, RouteOption, TripInput } from '@/types/aniRoute'
 
+/** Pre-filled trip so the planner opens ready to search; every value can be edited. */
+export const defaultTrip: TripInput = {
+  crop: 'Tomatoes',
+  quantity: 250,
+  cropLoads: [{ name: 'Tomatoes', quantity: 250 }],
+  unit: 'kg',
+  vehicle: 'Small truck',
+  origin: 'Baguio City, Benguet',
+  destination: 'Calamba, Laguna',
+  deliveryPoints: ['Calamba, Laguna'],
+}
+
 const trip = reactive<TripInput>({
-  ...presentationTrip,
-  cropLoads: presentationTrip.cropLoads.map(crop => ({ ...crop })),
-  deliveryPoints: [...presentationTrip.deliveryPoints],
+  ...defaultTrip,
+  cropLoads: defaultTrip.cropLoads.map(crop => ({ ...crop })),
+  deliveryPoints: [...defaultTrip.deliveryPoints],
 })
-const routes = reactive<RouteOption[]>(makePresentationRoutes(trip))
+const routes = reactive<RouteOption[]>([])
 const state = reactive({
-  mode: 'presentation' as 'presentation' | 'live',
   loadingRoutes: false,
   fieldErrors: {} as Record<string, string>,
-  selectedRouteId: 'optimal',
+  selectedRouteId: '',
   activeRouteId: null as string | null,
-  routeSource: 'presentation' as 'api' | 'presentation' | 'local_presentation',
-  routeMessage: 'Crop-aware route options are ready for the Baguio-to-Calamba scenario.',
+  routeSource: 'api' as const,
+  routeMessage: '',
   hazard: null as DetectedHazard | null,
   uploadStatus: 'idle' as 'idle' | 'uploading' | 'uploaded' | 'failed',
   uploadMessage: '',
   newRecommendedRouteId: null as string | null,
   apiConnected: false,
-  originCoordinates: { latitude: 16.402, longitude: 120.596 } as Coordinates | null,
+  originCoordinates: { latitude: 16.4023, longitude: 120.596 } as Coordinates | null,
   destinationCoordinates: { latitude: 14.2117, longitude: 121.1653 } as Coordinates | null,
   deliveryPointCoordinates: [{ latitude: 14.2117, longitude: 121.1653 }] as Array<Coordinates | null>,
 })

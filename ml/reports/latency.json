@@ -1,0 +1,60 @@
+{
+  "rows": [
+    {
+      "model": "Model B",
+      "format": "pt",
+      "imgsz": 640,
+      "mean_ms": 70.9,
+      "p95_ms": 110.6,
+      "fps": 14.1
+    },
+    {
+      "model": "Model B",
+      "format": "pt",
+      "imgsz": 480,
+      "mean_ms": 40.4,
+      "p95_ms": 47.7,
+      "fps": 24.8
+    },
+    {
+      "model": "Model B",
+      "format": "onnx",
+      "imgsz": 640,
+      "mean_ms": 50.3,
+      "p95_ms": 59.2,
+      "fps": 19.9
+    },
+    {
+      "model": "Model B",
+      "format": "openvino",
+      "imgsz": 640,
+      "mean_ms": 39.9,
+      "p95_ms": 54.7,
+      "fps": 25.1
+    },
+    {
+      "model": "System (B)",
+      "format": "auto",
+      "imgsz": 640,
+      "mean_ms": 49.2,
+      "p95_ms": 74.5,
+      "fps": 20.3
+    }
+  ],
+  "system": {
+    "models": "B",
+    "mean_ms": 49.2,
+    "p95_ms": 74.5,
+    "fps": 20.3,
+    "runtime_format": "auto"
+  },
+  "images": 1,
+  "runs": 40,
+  "device": "cpu",
+  "machine": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
+    "python": "3.12.3"
+  },
+  "evaluated_at": "2026-11-22T14:18:03.625759+00:00"
+}

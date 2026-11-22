@@ -1,1 +1,1 @@
-"""AniRoute demo API package."""
+"""AniRoute route API package."""

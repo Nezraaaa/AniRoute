@@ -22,45 +22,102 @@ def trip_input(**overrides):
     return main.TripInput(**values)
 
 
-def test_health_reports_demo_capabilities():
-    assert main.health() == {
-        "status": "ok",
-        "service": "aniroute-demo-api",
-        "data_source": "demo",
-        "live_route_engine": False,
-        "live_hazard_detection": False,
-    }
+def test_health_reports_live_route_and_vision_capabilities():
+    health = main.health()
+    assert health["status"] == "ok"
+    assert health["data_source"] == "api"
+    assert health["live_route_engine"] is True
+    assert isinstance(health["live_hazard_detection"], bool)
+    assert isinstance(health["supported_hazards"], list)
 
 
-def test_calculate_returns_three_explained_categories():
-    result = main.calculate_routes(trip_input())
-    assert {route["category"] for route in result["routes"]} == {"optimal", "safer", "fastest"}
-    assert result["recommended_route_id"] == "optimal"
-    assert next(route for route in result["routes"] if route["category"] == "optimal")["recommended"] is True
-    for route in result["routes"]:
-        assert route["geometry"]["type"] == "LineString"
-        assert route["travel_time_minutes"] > 0
-        assert route["distance_km"] > 0
-        assert route["road_condition_summary"]
-        assert route["weather_flood_summary"]
-        assert route["temperature_exposure_summary"]
-        assert route["crop_risk_label"] in {"lower", "moderate", "higher"}
-        assert route["explanation"]
-    assert result["data_source"] == "demo"
+def live_provider_routes():
+    return [
+        {
+            "duration": 3_600,
+            "distance": 90_000,
+            "geometry": {"type": "LineString", "coordinates": [[120.6, 16.4], [121.0, 15.4], [121.16, 14.21]]},
+        },
+        {
+            "duration": 4_200,
+            "distance": 82_000,
+            "geometry": {"type": "LineString", "coordinates": [[120.6, 16.4], [120.82, 15.55], [121.16, 14.21]]},
+        },
+        {
+            "duration": 4_800,
+            "distance": 105_000,
+            "geometry": {"type": "LineString", "coordinates": [[120.6, 16.4], [121.22, 15.1], [121.16, 14.21]]},
+        },
+    ]
 
 
-def test_demo_estimates_reflect_trip_edits_but_keep_the_illustrative_corridor():
-    baseline = main.calculate_routes(trip_input())["routes"]
-    edited = main.calculate_routes(trip_input(
-        crop="Leafy vegetables", quantity=500, vehicle="Medium truck",
-        origin="Polomolok farm gate", destination="General Santos public market",
-    ))["routes"]
-    optimal_before = next(route for route in baseline if route["category"] == "optimal")
-    optimal_after = next(route for route in edited if route["category"] == "optimal")
-    assert optimal_after["travel_time_minutes"] > optimal_before["travel_time_minutes"]
-    assert optimal_after["distance_km"] > optimal_before["distance_km"]
-    assert optimal_after["crop_risk_score"] > optimal_before["crop_risk_score"]
-    assert optimal_after["geometry"] == optimal_before["geometry"]
+def test_live_calculation_returns_provider_geometry_and_api_source(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
+    stops = [
+        main.Coordinates(latitude=16.402, longitude=120.596),
+        main.Coordinates(latitude=14.2117, longitude=121.1653),
+    ]
+    monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: stops)
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+
+    result = main.calculate_routes(trip_input(
+        originCoordinates={"latitude": 16.402, "longitude": 120.596},
+        deliveryPointCoordinates=[{"latitude": 14.2117, "longitude": 121.1653}],
+    ))
+
+    assert result["data_source"] == "api"
+    assert result["recommended_route_id"] == "route-1"
+    assert next(route for route in result["routes"] if route["recommended"])["category"] == "optimal"
+    assert result["routes"]
+    assert all(route["category"] in {"optimal", "safer", "fastest"} for route in result["routes"])
+    assert result["routes"][0]["geometry"]["coordinates"] == live_provider_routes()[0]["geometry"]["coordinates"]
+    assert result["routes"][0]["travel_time_minutes"] == 60
+    assert result["routes"][0]["distance_km"] == 90
+    assert result["routes"][0]["risk_factors"]["road"] == 0
+    assert "not connected yet" in result["message"]
+
+
+def test_live_recalculation_keeps_live_source(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
+    monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: [
+        main.Coordinates(latitude=16.402, longitude=120.596),
+        main.Coordinates(latitude=14.2117, longitude=121.1653),
+    ])
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+    payload = main.RecalculateInput(
+        trip=trip_input(), active_route_id="route-2", hazard_type="pothole",
+        road_segment_id="route-2@unlocated", observation_id="observation-1",
+    )
+
+    result = main.recalculate_routes(payload)
+
+    assert result["data_source"] == "api"
+    assert result["changed"] is True
+    assert "re-scored after the confirmed pothole" in result["message"]
+
+
+def test_confirmed_hazard_on_active_route_changes_live_recommendation(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
+    monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: [
+        main.Coordinates(latitude=16.402, longitude=120.596),
+        main.Coordinates(latitude=14.2117, longitude=121.1653),
+    ])
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+    before = main.calculate_routes(trip_input())
+    assert before["recommended_route_id"] == "route-1"
+
+    # Driver confirms severe road damage on route-1's middle vertex (121.0, 15.4).
+    main.confirm_hazard(main.HazardConfirmation(
+        hazard_type="severe_road_damage", detected_at="2026-11-22T10:00:00Z", confidence=0.83,
+        latitude=15.4, longitude=121.0, route_id="route-1", road_segment_id="route-1@15.4000,121.0000",
+    ))
+    result = main.recalculate_routes(main.RecalculateInput(
+        trip=trip_input(), active_route_id="route-1", hazard_type="severe_road_damage",
+        road_segment_id="route-1@15.4000,121.0000", observation_id="x",
+    ))
+    route_1 = next(route for route in result["routes"] if route["route_id"] == "route-1")
+    assert route_1["risk_factors"]["road"] == 25
+    assert route_1["known_hazards"][0]["name"] == "Severe road damage"
+    assert result["recommended_route_id"] != "route-1"
+    assert result["changed"] is True
+    assert "different route is now recommended" in result["message"]
 
 
 def test_invalid_trip_is_rejected():
@@ -78,13 +135,21 @@ def test_trip_accepts_multiple_delivery_points_and_crop_loads():
     assert trip.delivery_points == ["Koronadal trading post", "General Santos public market"]
 
 
-def test_scanner_does_not_claim_live_detection():
+def test_scanner_reports_unavailable_detection_honestly_without_models(monkeypatch: pytest.MonkeyPatch):
+    from backend.vision import ensemble
+    from backend.vision.config import VisionSettings
+
+    detector = ensemble.HazardDetector(VisionSettings(warmup=False))
+    detector.model_a.load = lambda: False
+    detector.model_b.load = lambda: False
+    monkeypatch.setattr(ensemble, "_detector", detector)
     result = main.start_scanning(main.ScanStart(route_id="optimal"))
-    assert result["mode"] == "demo"
+    assert result["mode"] == "live"
     assert result["detection_available"] is False
     frame = "data:image/jpeg;base64,/9j/AA=="
     scan = main.scan_frame(main.ScanFrame(route_id="optimal", captured_at="2026-09-20T12:30:00Z", frame_data_url=frame))
     assert scan["detection"] is None
+    assert scan["data_source"] == "api"
     assert scan["frame_stored"] is False
     assert main.stop_scanning(main.ScanStart(route_id="optimal"))["scanning"] is False
 
@@ -99,7 +164,7 @@ def test_confirmed_hazard_stores_geotag_and_evidence(data_dir: Path):
     result = main.confirm_hazard(payload)
     saved = json.loads((data_dir / "hazard_observations.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert result["status"] == "uploaded"
-    assert result["data_source"] == "demo"
+    assert result["data_source"] == "api"
     assert result["evidence_stored"] is True
     assert saved["latitude"] == 6.42
     assert saved["longitude"] == 124.89
@@ -115,15 +180,3 @@ def test_hazard_requires_both_coordinates_or_neither():
             hazard_type="standing_water", detected_at="2026-09-20T12:30:00Z",
             latitude=6.42, route_id="fastest", road_segment_id="fastest-segment-2",
         )
-
-
-def test_recalculation_can_recommend_a_safer_alternative():
-    payload = main.RecalculateInput(
-        trip=trip_input(), active_route_id="optimal", hazard_type="pothole",
-        road_segment_id="optimal-segment-2", observation_id="demo-observation-1",
-    )
-    result = main.recalculate_routes(payload)
-    assert result["changed"] is True
-    assert result["recommended_route_id"] == "safer"
-    safer = next(route for route in result["routes"] if route["route_id"] == "safer")
-    assert safer["recommended"] is True

@@ -1,0 +1,14 @@
+# Training and evaluation (Colab or laptop). The backend's requirements cover inference.
+ultralytics>=8.3,<9.0
+opencv-python-headless>=4.10
+numpy>=1.26
+pillow>=10.0
+pyyaml>=6.0
+matplotlib>=3.8
+onnx>=1.16
+onnxruntime>=1.18
+# Optional: fastest CPU runtime for `python ml/export.py --formats openvino`
+openvino>=2024.0
+# The evaluation reuses the app's preprocessing and FastAPI is imported by backend.vision
+fastapi>=0.116,<1.0
+pydantic>=2.11,<3.0

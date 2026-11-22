@@ -1,12 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import DeliveryForm from './DeliveryForm.vue'
-import { presentationTrip } from '@/data/presentation'
+import { defaultTrip } from '@/composables/useAniRouteStore'
 
 describe('DeliveryForm', () => {
-  it('shows place suggestions and submits the trip details', async () => {
+  it('builds the crop and delivery rows and submits the trip details', async () => {
     const wrapper = mount(DeliveryForm, {
-      props: { trip: { ...presentationTrip, cropLoads: [{ ...presentationTrip.cropLoads[0]! }], deliveryPoints: [...presentationTrip.deliveryPoints] }, errors: {} },
+      props: { trip: { ...defaultTrip, cropLoads: [{ ...defaultTrip.cropLoads[0]! }], deliveryPoints: [...defaultTrip.deliveryPoints] }, errors: {} },
     })
 
     expect(wrapper.get('#crop-count').attributes('type')).toBe('number')
@@ -23,7 +23,8 @@ describe('DeliveryForm', () => {
     expect(wrapper.get('#destination-0').attributes('list')).toBe('destination-0-suggestions')
     expect(wrapper.findAll('#destination-1')).toHaveLength(1)
     expect(wrapper.get('#origin').attributes('list')).toBe('origin-suggestions')
-    expect(wrapper.findAll('#origin-suggestions option')).toHaveLength(3)
+    // No hard-coded sample places: suggestions come only from the live geocoder.
+    expect(wrapper.findAll('#origin-suggestions option')).toHaveLength(0)
 
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('find-routes')).toHaveLength(1)

@@ -7,6 +7,7 @@ import os
 import re
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -14,22 +15,62 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+try:  # imported as `backend.main` (tests, `uvicorn backend.main:app`)
+    from . import hazard_risk
+    from .vision.config import REPORTS_DIR, SAMPLES_DIR
+    from .vision.ensemble import get_detector
+    from .vision.preprocess import ImageDecodeError, decode_data_url, encode_jpeg_data_url
+    from .vision.annotate import draw_detections
+    from .vision.router import get_hazard_filter, router as vision_router, run_detection
+except ImportError:  # run from inside backend/ (`uvicorn main:app`)
+    import hazard_risk  # type: ignore[no-redef]
+    from vision.config import REPORTS_DIR, SAMPLES_DIR  # type: ignore[no-redef]
+    from vision.ensemble import get_detector  # type: ignore[no-redef]
+    from vision.preprocess import ImageDecodeError, decode_data_url, encode_jpeg_data_url  # type: ignore[no-redef]
+    from vision.annotate import draw_detections  # type: ignore[no-redef]
+    from vision.router import get_hazard_filter, router as vision_router, run_detection  # type: ignore[no-redef]
 
-DataSource = Literal["demo"]
+
 HazardType = Literal["pothole", "severe_road_damage", "standing_water", "road_obstruction"]
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("ANIROUTE_DATA_DIR", str(APP_DIR / "data")))
 GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
-GEOCODER_USER_AGENT = os.getenv("ANIROUTE_GEOCODER_USER_AGENT", "AniRoute/1.0 (local demo geocoder proxy)")
+ROUTING_URL = os.getenv("ANIROUTE_ROUTING_URL", "https://router.project-osrm.org").rstrip("/")
+ROUTING_PROFILE = os.getenv("ANIROUTE_ROUTING_PROFILE", "driving")
+GEOCODER_USER_AGENT = os.getenv("ANIROUTE_GEOCODER_USER_AGENT", "AniRoute/1.0 (live route integration)")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return max(float(os.getenv(name, str(default))), 1.0)
+    except ValueError:
+        return default
+
+
+LIVE_ROUTING_ENABLED = _env_bool("ANIROUTE_LIVE_ROUTING_ENABLED", True)
+PROVIDER_TIMEOUT_SECONDS = _env_float("ANIROUTE_PROVIDER_TIMEOUT_SECONDS", 18.0)
 _write_lock = threading.Lock()
 
 
 class CropLoad(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     quantity: float = Field(gt=0, le=100_000)
+
+
+class Coordinates(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
 
 
 class TripInput(BaseModel):
@@ -43,6 +84,8 @@ class TripInput(BaseModel):
     destination: str = Field(min_length=1, max_length=180)
     crop_loads: list[CropLoad] = Field(default_factory=list, alias="cropLoads", max_length=8)
     delivery_points: list[str] = Field(default_factory=list, alias="deliveryPoints", max_length=8)
+    origin_coordinates: Coordinates | None = Field(default=None, alias="originCoordinates")
+    delivery_point_coordinates: list[Coordinates | None] = Field(default_factory=list, alias="deliveryPointCoordinates", max_length=8)
 
 
 class HazardConfirmation(BaseModel):
@@ -54,7 +97,9 @@ class HazardConfirmation(BaseModel):
     route_id: str = Field(min_length=1, max_length=100)
     road_segment_id: str = Field(min_length=1, max_length=100)
     distance_ahead_km: float | None = Field(default=None, ge=0, le=100)
-    simulated: bool = True
+    simulated: bool = False
+    model: Literal["A", "B"] | None = None
+    source_label: str | None = Field(default=None, max_length=60)
     evidence_frame_data_url: str | None = Field(default=None, max_length=1_500_000)
 
     @model_validator(mode="after")
@@ -73,7 +118,8 @@ class ScanFrame(BaseModel):
     captured_at: datetime
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    frame_data_url: str = Field(min_length=30, max_length=180_000)
+    frame_data_url: str = Field(min_length=30, max_length=820_000)
+    heading_degrees: float | None = Field(default=None, ge=0, le=360)
 
     @model_validator(mode="after")
     def coordinates_must_be_a_pair(self) -> "ScanFrame":
@@ -85,8 +131,8 @@ class ScanFrame(BaseModel):
             raw = base64.b64decode(self.frame_data_url.split(",", 1)[1], validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("Camera frame is not valid base64.") from exc
-        if len(raw) > 125_000:
-            raise ValueError("Camera frame must be 125 KB or smaller.")
+        if len(raw) > 600_000:
+            raise ValueError("Camera frame must be 600 KB or smaller.")
         return self
 
 
@@ -98,79 +144,242 @@ class RecalculateInput(BaseModel):
     observation_id: str = Field(min_length=1, max_length=100)
 
 
-def _demo_hazard() -> dict:
+def _clamp(value: float, minimum: float = 0, maximum: float = 100) -> int:
+    return round(max(minimum, min(maximum, value)))
+
+
+def _geocoder_queries(query: str) -> list[str]:
+    """Return a small set of useful queries for rural/farm landmark text."""
+    original = query.strip()
+    simplified = re.sub(
+        r"\b(?:farm\s+pickup\s+point|farm\s+gate|collection\s+point|consolidation\s+center|trading\s+post|public\s+market)\b",
+        "",
+        original,
+        flags=re.IGNORECASE,
+    )
+    simplified = re.sub(r"\s{2,}", " ", simplified).strip(" ,")
+    candidates: list[str] = []
+    for value in (original, simplified):
+        if not value:
+            continue
+        candidate = value if re.search(r"\bphilippines\b", value, re.IGNORECASE) else f"{value}, Philippines"
+        if candidate.casefold() not in {item.casefold() for item in candidates}:
+            candidates.append(candidate)
+    return candidates
+
+
+def _geocode_route_stop(query: str) -> Coordinates:
+    for candidate in _geocoder_queries(query):
+        params = {
+            "q": candidate,
+            "format": "jsonv2",
+            "addressdetails": "1",
+            "limit": "1",
+        }
+        try:
+            with httpx.Client(
+                timeout=PROVIDER_TIMEOUT_SECONDS,
+                follow_redirects=True,
+                headers={"Accept": "application/json", "Accept-Language": "en", "User-Agent": GEOCODER_USER_AGENT},
+            ) as client:
+                response = client.get(GEOCODER_URL, params=params)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail="Location search service is unavailable.") from exc
+
+        try:
+            results = response.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="Location search returned invalid data.") from exc
+        if not isinstance(results, list) or not results:
+            continue
+
+        item = results[0]
+        if not isinstance(item, dict):
+            continue
+        try:
+            return Coordinates(latitude=float(item["lat"]), longitude=float(item["lon"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    raise HTTPException(
+        status_code=422,
+        detail=f"Could not locate route stop '{query}'. Select a location from the search suggestions.",
+    )
+
+
+def _resolve_trip_stops(trip: TripInput) -> list[Coordinates]:
+    destination_queries = [point.strip() for point in trip.delivery_points if point.strip()]
+    if not destination_queries:
+        destination_queries = [trip.destination.strip()]
+
+    provided_destinations = trip.delivery_point_coordinates
+    stops: list[Coordinates] = [trip.origin_coordinates or _geocode_route_stop(trip.origin)]
+    for index, query in enumerate(destination_queries):
+        coordinate = provided_destinations[index] if index < len(provided_destinations) else None
+        stops.append(coordinate or _geocode_route_stop(query))
+    if len(stops) < 2:
+        raise HTTPException(status_code=422, detail="At least one pickup and one delivery point are required.")
+    return stops
+
+
+def _request_routing_routes(stops: list[Coordinates]) -> list[dict]:
+    coordinate_path = ";".join(f"{point.longitude:.6f},{point.latitude:.6f}" for point in stops)
+    url = f"{ROUTING_URL}/route/v1/{ROUTING_PROFILE}/{coordinate_path}"
+    params = {
+        "alternatives": "true",
+        "overview": "full",
+        "geometries": "geojson",
+        "steps": "false",
+    }
+    try:
+        with httpx.Client(
+            timeout=PROVIDER_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers={"Accept": "application/json", "User-Agent": "AniRoute/1.0 (live routing)"},
+        ) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Live route service is unavailable.") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Live route service returned invalid data.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="Live route service returned an unexpected response.")
+    if payload.get("code") != "Ok":
+        provider_message = payload.get("message")
+        detail = "No drivable route could be found for the selected locations."
+        if isinstance(provider_message, str) and provider_message.strip():
+            detail = f"No drivable route could be found: {provider_message.strip()}"
+        raise HTTPException(status_code=422, detail=detail)
+    raw_routes = payload.get("routes")
+    if not isinstance(raw_routes, list) or not raw_routes:
+        raise HTTPException(status_code=422, detail="No route options were returned for the selected locations.")
+    return [route for route in raw_routes if isinstance(route, dict)]
+
+
+def _crop_sensitivity(crop: str) -> int:
+    if re.search(r"leafy|lettuce|pechay|spinach|herb", crop, re.IGNORECASE):
+        return 12
+    if re.search(r"banana|mango|onion|garlic|potato", crop, re.IGNORECASE):
+        return 4
+    return 8
+
+
+def _risk_label(score: int) -> str:
+    return "higher" if score >= 60 else "moderate" if score >= 35 else "lower"
+
+
+def _live_routes(trip: TripInput) -> dict:
+    if not LIVE_ROUTING_ENABLED:
+        raise HTTPException(status_code=503, detail="Live route engine is disabled. Set ANIROUTE_LIVE_ROUTING_ENABLED=true.")
+
+    stops = _resolve_trip_stops(trip)
+    raw_routes = _request_routing_routes(stops)
+    candidates: list[dict] = []
+    for raw_route in raw_routes[:3]:
+        geometry = raw_route.get("geometry")
+        coordinates = geometry.get("coordinates") if isinstance(geometry, dict) else None
+        duration = raw_route.get("duration")
+        distance = raw_route.get("distance")
+        if not isinstance(coordinates, list) or len(coordinates) < 2:
+            continue
+        if not isinstance(duration, (int, float)) or not isinstance(distance, (int, float)):
+            continue
+        clean_coordinates = [
+            [float(point[0]), float(point[1])]
+            for point in coordinates
+            if isinstance(point, (list, tuple)) and len(point) >= 2
+            and isinstance(point[0], (int, float)) and isinstance(point[1], (int, float))
+        ]
+        if len(clean_coordinates) < 2 or duration <= 0 or distance <= 0:
+            continue
+        candidates.append({
+            "coordinates": clean_coordinates,
+            "duration_minutes": max(1, float(duration) / 60),
+            "distance_km": float(distance) / 1000,
+        })
+
+    if not candidates:
+        raise HTTPException(status_code=502, detail="Live route service returned no usable route geometry.")
+
+    minimum_duration = min(route["duration_minutes"] for route in candidates)
+    minimum_distance = min(route["distance_km"] for route in candidates)
+    crop_shift = _crop_sensitivity(trip.crop)
+    # Sensitive crops (leafy vegetables, tomatoes) are penalised more by rough or flooded roads.
+    crop_road_multiplier = 0.6 + crop_shift / 20
+    observations = hazard_risk.load_observations(DATA_DIR / "hazard_observations.jsonl")
+    for route in candidates:
+        route["road_factor"], route["hazard_pins"] = hazard_risk.assess_route(route["coordinates"], observations)
+        route["time_factor"] = _clamp((route["duration_minutes"] / minimum_duration - 1) * 100)
+        route["distance_factor"] = _clamp((route["distance_km"] / minimum_distance - 1) * 100)
+        route["crop_risk_score"] = _clamp(
+            14 + (route["time_factor"] * 0.42) + (route["distance_factor"] * 0.34) + crop_shift
+            + route["road_factor"] * 0.5 * crop_road_multiplier,
+        )
+        route["combined_score"] = (
+            (route["time_factor"] * 0.5) + (route["distance_factor"] * 0.25) + (route["crop_risk_score"] * 0.25)
+            + route["road_factor"] * 0.6 * crop_road_multiplier
+        )
+
+    fastest_index = min(range(len(candidates)), key=lambda index: (candidates[index]["duration_minutes"], index))
+    safer_index = min(range(len(candidates)), key=lambda index: (candidates[index]["crop_risk_score"], candidates[index]["duration_minutes"], index))
+    optimal_index = min(range(len(candidates)), key=lambda index: (candidates[index]["combined_score"], index))
+    category_indexes = {"optimal": optimal_index, "safer": safer_index, "fastest": fastest_index}
+    route_categories: dict[int, list[str]] = {}
+    for category, index in category_indexes.items():
+        route_categories.setdefault(index, []).append(category)
+
+    route_data: list[dict] = []
+    for index, candidate in enumerate(candidates):
+        categories = route_categories.get(index, [])
+        category = "optimal" if "optimal" in categories else "safer" if "safer" in categories else "fastest"
+        # Stable id per provider route, so the active trip keeps pointing at the same road
+        # geometry even when a confirmed hazard changes which route is "optimal".
+        route_id = f"route-{index + 1}"
+        hazard_summary = hazard_risk.summarize_hazards(candidate["hazard_pins"])
+        route_data.append({
+            "route_id": route_id,
+            "category": category,
+            "categories": categories,
+            "geometry": {"type": "LineString", "coordinates": candidate["coordinates"]},
+            "travel_time_minutes": max(1, round(candidate["duration_minutes"])),
+            "distance_km": round(candidate["distance_km"], 1),
+            "road_condition_summary": (
+                f"{hazard_summary} (AniRoute camera, driver-confirmed)." if hazard_summary
+                else "No camera-confirmed road hazards on this route yet."
+            ),
+            "weather_flood_summary": "Live weather and flood feeds are not connected yet.",
+            "temperature_exposure_summary": "Live temperature feed is not connected yet.",
+            "crop_risk_score": candidate["crop_risk_score"],
+            "crop_risk_label": _risk_label(candidate["crop_risk_score"]),
+            "risk_factors": {
+                "travelTime": candidate["time_factor"],
+                "distance": candidate["distance_factor"],
+                "road": candidate["road_factor"],
+                "floodWeather": 0,
+                "temperature": 0,
+            },
+            "crop_profile_summary": f"Live score for {trip.crop}: travel time, distance, crop sensitivity and camera-confirmed road hazards. Weather, flood and temperature feeds are pending.",
+            "explanation": (
+                f"{hazard_summary}. Each confirmed hazard within 75 m of the route raises its road-risk factor."
+                if hazard_summary else
+                "Live route geometry and ETA come from the configured road-routing service. The crop-risk score uses travel time, distance, crop sensitivity and any camera-confirmed road hazards."
+            ),
+            "recommended": index == optimal_index,
+            "known_hazards": candidate["hazard_pins"],
+        })
+
+    recommended_route = next(route for route in route_data if route["recommended"])
     return {
-        "id": "demo-standing-water",
-        "name": "Standing water",
-        "coordinates": {"latitude": 6.428, "longitude": 124.895},
-        "note": "Sample road note · demo only",
+        "routes": route_data,
+        "data_source": "api",
+        "recommended_route_id": recommended_route["route_id"],
+        "message": "Live road geometry and ETA returned by the OSRM routing service, scored with camera-confirmed road hazards. Weather, flood and temperature feeds are not connected yet.",
     }
-
-
-def _routes(trip: TripInput, affected_route_id: str | None = None) -> list[dict]:
-    # Demo geometry is an illustration for one corridor, not a routable road graph.
-    lines = {
-        "optimal": [[124.957, 6.359], [124.942, 6.382], [124.925, 6.406], [124.904, 6.431], [124.882, 6.463], [124.858, 6.493], [124.852, 6.503]],
-        "safer": [[124.957, 6.359], [124.944, 6.378], [124.934, 6.402], [124.915, 6.432], [124.892, 6.462], [124.870, 6.486], [124.852, 6.503]],
-        "fastest": [[124.957, 6.359], [124.939, 6.378], [124.922, 6.405], [124.900, 6.431], [124.881, 6.461], [124.862, 6.488], [124.852, 6.503]],
-    }
-    default_origin = "farm pickup point, tupi"
-    default_destination = "koronadal trading post"
-    origin = trip.origin.strip().lower()
-    destination = trip.destination.strip().lower()
-    location_text = f"{origin}|{destination}"
-    location_shift = 0 if (origin, destination) == (default_origin, default_destination) else 1 + sum(map(ord, location_text)) % 6
-    vehicle_time_shift = -6 if trip.vehicle == "Motorcycle" else -2 if trip.vehicle == "Pickup" else 7 if trip.vehicle == "Medium truck" else 0 if trip.vehicle == "Small truck" else 3
-    load_delta = trip.quantity - 250
-    load_ratio = load_delta / 250
-    rounded_load_steps = int(load_ratio + 0.5) if load_ratio >= 0 else int(load_ratio - 0.5)
-    if load_delta and rounded_load_steps == 0:
-        rounded_load_steps = 1 if load_delta > 0 else -1
-    load_time_shift = max(-4, min(10, rounded_load_steps))
-    load_risk_shift = max(0, min(24, rounded_load_steps * 4))
-    vehicle_risk_shift = 4 if trip.vehicle == "Medium truck" else 0
-    time_shift = vehicle_time_shift + load_time_shift + location_shift * 2
-    distance_shift = location_shift * 0.6
-    crop_shift = 5 if re.search(r"leafy|lettuce|pechay", trip.crop, re.I) else -2 if re.search(r"banana|mango", trip.crop, re.I) else 0
-    def risk_label(score: int) -> str:
-        return "higher" if score >= 60 else "moderate" if score >= 35 else "lower"
-
-    data = [
-        {
-            "route_id": "optimal", "category": "optimal", "geometry": {"type": "LineString", "coordinates": lines["optimal"]},
-            "travel_time_minutes": 54 + time_shift, "distance_km": round(32.4 + distance_shift, 1), "road_condition_summary": "Mostly smooth road",
-            "weather_flood_summary": "Some rain exposure · no live forecast", "temperature_exposure_summary": "Mild exposure · sample only", "crop_risk_score": 28 + crop_shift + load_risk_shift + vehicle_risk_shift,
-            "crop_risk_label": risk_label(28 + crop_shift + load_risk_shift + vehicle_risk_shift), "explanation": "Balances travel time, distance, road condition, sample weather, temperature and crop sensitivity.",
-            "recommended": True, "known_hazards": [],
-        },
-        {
-            "route_id": "safer", "category": "safer", "geometry": {"type": "LineString", "coordinates": lines["safer"]},
-            "travel_time_minutes": 66 + time_shift, "distance_km": round(37.8 + distance_shift, 1), "road_condition_summary": "Fewer known rough sections",
-            "weather_flood_summary": "Lower sample flood exposure", "temperature_exposure_summary": "Lower heat exposure · sample", "crop_risk_score": 18 + crop_shift + load_risk_shift + vehicle_risk_shift,
-            "crop_risk_label": risk_label(18 + crop_shift + load_risk_shift + vehicle_risk_shift), "explanation": "Takes longer but has lower known road and flood risk in this sample.",
-            "recommended": False, "known_hazards": [],
-        },
-        {
-            "route_id": "fastest", "category": "fastest", "geometry": {"type": "LineString", "coordinates": lines["fastest"]},
-            "travel_time_minutes": 43 + time_shift, "distance_km": round(28.7 + distance_shift, 1), "road_condition_summary": "One rough road section",
-            "weather_flood_summary": "Standing water noted · sample only", "temperature_exposure_summary": "Higher afternoon heat exposure · sample", "crop_risk_score": min(95, 63 + crop_shift + load_risk_shift + vehicle_risk_shift),
-            "crop_risk_label": risk_label(min(95, 63 + crop_shift + load_risk_shift + vehicle_risk_shift)), "explanation": "Shortest estimated drive time, with a sample standing-water concern.",
-            "recommended": False, "known_hazards": [_demo_hazard()],
-        },
-    ]
-    if affected_route_id:
-        affected = next((route for route in data if route["route_id"] == affected_route_id), None)
-        if affected:
-            affected["crop_risk_score"] = min(95, affected["crop_risk_score"] + 28)
-            affected["crop_risk_label"] = "higher" if affected["crop_risk_score"] >= 60 else "moderate"
-            affected["road_condition_summary"] = "New road hazard confirmed · sample update"
-            affected["explanation"] = "A confirmed sample road note changed this route’s risk information."
-        for route in data:
-            route["recommended"] = route["route_id"] == "safer"
-        recommendation_id = "optimal" if affected_route_id == "safer" else "safer"
-        recommendation = next(route for route in data if route["route_id"] == recommendation_id)
-        recommendation["explanation"] = f"Recommended after a confirmed sample hazard changed the {affected_route_id} route conditions."
-    return data
 
 
 def _decode_evidence(data_url: str | None, observation_id: str) -> str | None:
@@ -193,30 +402,53 @@ def _decode_evidence(data_url: str | None, observation_id: str) -> str | None:
     return str(file_path.relative_to(DATA_DIR))
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    detector = get_detector()
+    if detector.settings.warmup:
+        detector.warmup_async()  # loads both models in the background; API is usable immediately
+    yield
+
+
 app = FastAPI(
-    title="AniRoute Demo API",
-    version="1.0.0",
-    description="Runnable demo contract for the AniRoute frontend. Route scores and findings are sample data.",
+    title="AniRoute API",
+    version="2.0.0",
+    description=(
+        "AniRoute crop-aware routing (OSRM) with real-time road-hazard detection: a fine-tuned YOLO "
+        "road-surface model and a COCO-pretrained YOLO obstruction model."
+    ),
+    lifespan=lifespan,
 )
 
-origins = [value.strip() for value in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+origins = [value.strip() for value in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173").split(",") if value.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "Range"],
+    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
 )
+app.include_router(vision_router)
+# Report images (confusion matrix, curves, error gallery) and sample media for the Vision Lab.
+app.mount("/reports", StaticFiles(directory=str(REPORTS_DIR), check_dir=False), name="reports")
+app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR), check_dir=False), name="samples")
 
 
 @app.get("/api/health")
 def health() -> dict:
+    detector = get_detector()
+    status = detector.status()
     return {
         "status": "ok",
-        "service": "aniroute-demo-api",
-        "data_source": "demo",
-        "live_route_engine": False,
-        "live_hazard_detection": False,
+        "service": "aniroute-api",
+        "data_source": "api",
+        "live_route_engine": LIVE_ROUTING_ENABLED,
+        "live_hazard_detection": detector.ready,
+        "vision_warming_up": status["warming_up"],
+        "supported_hazards": status["supported_hazards"],
     }
 
 
@@ -276,52 +508,117 @@ async def search_locations(
 
 @app.post("/api/routes/calculate")
 def calculate_routes(trip: TripInput) -> dict:
-    routes = _routes(trip)
-    return {
-        "routes": routes,
-        "data_source": "demo",
-        "recommended_route_id": "optimal",
-        "message": "Sample route options · road, weather and risk information is not live.",
-    }
+    return _live_routes(trip)
 
 
 @app.post("/api/routes/recalculate")
 def recalculate_routes(payload: RecalculateInput) -> dict:
-    routes = _routes(payload.trip, affected_route_id=payload.active_route_id)
-    recommendation_id = "optimal" if payload.active_route_id == "safer" else "safer"
-    return {
-        "routes": routes,
-        "data_source": "demo",
-        "recommended_route_id": recommendation_id,
-        "changed": payload.active_route_id != recommendation_id,
-        "message": "Sample routes checked after the confirmed road finding.",
-    }
+    result = _live_routes(payload.trip)
+    recommended_id = result["recommended_route_id"]
+    result["changed"] = recommended_id != payload.active_route_id
+    active = next((route for route in result["routes"] if route["route_id"] == payload.active_route_id), None)
+    hazard_name = hazard_risk.HAZARD_NAMES.get(payload.hazard_type, "road hazard").lower()
+    if active is None:
+        detail = "The active route is no longer offered by the routing service; showing current options."
+    elif active["known_hazards"]:
+        detail = f"Your route now carries {len(active['known_hazards'])} confirmed hazard(s), including the {hazard_name} you confirmed."
+    else:
+        detail = (
+            f"The confirmed {hazard_name} has no saved location near this route, so it could not change the road-risk score."
+        )
+    outcome = "A different route is now recommended." if result["changed"] else "Your current route is still the best option."
+    result["message"] = f"Route options re-scored after the confirmed {hazard_name}. {detail} {outcome}"
+    return result
 
 
 @app.post("/api/hazards/scanning/start")
 def start_scanning(payload: ScanStart) -> dict:
+    detector = get_detector()
+    ready = detector.load()
+    get_hazard_filter().reset(payload.route_id)
+    hazards = detector.supported_hazards()
+    names = ", ".join(hazard_risk.HAZARD_NAMES[item].lower() for item in hazards)
     return {
         "route_id": payload.route_id,
-        "mode": "demo",
-        "detection_available": False,
-        "message": "Camera access is handled in the browser. Live computer vision is not connected; only labelled sample detections are available.",
+        "mode": "live",
+        "detection_available": ready,
+        "supported_hazards": hazards,
+        "message": (
+            f"Road analysis is running on the AniRoute detector ({names})." if ready
+            else "No detection model is loaded on the server. Add trained weights to backend/models/."
+        ),
     }
 
 
 @app.post("/api/hazards/scanning/stop")
 def stop_scanning(payload: ScanStart) -> dict:
-    return {"route_id": payload.route_id, "scanning": False, "message": "Demo scanning stopped."}
+    get_hazard_filter().reset(payload.route_id)
+    return {"route_id": payload.route_id, "scanning": False, "message": "Road analysis stopped."}
+
+
+def _segment_id(route_id: str, coordinates: tuple[float, float] | None) -> str:
+    if coordinates is None:
+        return f"{route_id}@unlocated"
+    return f"{route_id}@{coordinates[0]:.4f},{coordinates[1]:.4f}"
 
 
 @app.post("/api/hazards/scan-frame")
 def scan_frame(payload: ScanFrame) -> dict:
+    """Detect hazards in one camera frame and apply temporal smoothing for the active route.
+
+    `detections` (every box in this frame) drives the live overlay; `detection` is only
+    set when a hazard has been seen in enough recent frames to alert the driver.
+    Frames are processed in memory and never stored unless the driver confirms.
+    """
+    detector = get_detector()
+    if not detector.load():
+        return {
+            "route_id": payload.route_id, "detection_available": False, "detection": None, "detections": [],
+            "data_source": "api", "frame_stored": False,
+            "message": "No detection model is loaded on the server.",
+        }
+    try:
+        frame_bytes = decode_data_url(payload.frame_data_url)
+    except ImageDecodeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = run_detection(frame_bytes)
+    detections = [item.to_dict() for item in result.detections]
+    coordinates = (payload.latitude, payload.longitude) if payload.latitude is not None and payload.longitude is not None else None
+    confirmed = get_hazard_filter().update(payload.route_id, detections, coordinates)
+
+    detection = None
+    evidence = None
+    if confirmed:
+        detection = {
+            "detection_id": confirmed["id"],
+            "hazard_type": confirmed["hazard_type"],
+            "label": confirmed["label"],
+            "source_label": confirmed["source_label"],
+            "model": confirmed["model"],
+            "detected_at": payload.captured_at.isoformat(),
+            "confidence": confirmed["confidence"],
+            "latitude": payload.latitude,
+            "longitude": payload.longitude,
+            "route_id": payload.route_id,
+            "road_segment_id": _segment_id(payload.route_id, coordinates),
+            "distance_ahead_km": None,
+            "frames_seen": confirmed["frames_seen"],
+            "window": confirmed["window"],
+        }
+        evidence = encode_jpeg_data_url(draw_detections(result.pipeline.enhanced, [confirmed]), quality=74, max_side=720)
+
     return {
         "route_id": payload.route_id,
-        "detection_available": False,
-        "detection": None,
-        "data_source": "demo",
+        "detection_available": True,
+        "detections": detections,
+        "image": {"width": result.image_width, "height": result.image_height},
+        "timings_ms": result.timings_ms,
+        "models_used": result.models_used,
+        "detection": detection,
+        "evidence_frame_data_url": evidence,
+        "data_source": "api",
         "frame_stored": False,
-        "message": "No live computer-vision model is connected. The demo does not store scan frames.",
+        "message": "Hazard confirmed across recent frames." if detection else "Frame analysed.",
     }
 
 
@@ -332,7 +629,7 @@ def confirm_hazard(payload: HazardConfirmation) -> dict:
     record = payload.model_dump(mode="json", exclude={"evidence_frame_data_url"})
     record.update({
         "observation_id": observation_id,
-        "data_source": "demo",
+        "data_source": "api",
         "stored_at": datetime.now(timezone.utc).isoformat(),
         "evidence_frame_path": evidence_path,
     })
@@ -340,11 +637,18 @@ def confirm_hazard(payload: HazardConfirmation) -> dict:
     with _write_lock:
         with (DATA_DIR / "hazard_observations.jsonl").open("a", encoding="utf-8") as file:
             file.write(json.dumps(record, separators=(",", ":")) + "\n")
+    located = payload.latitude is not None and payload.longitude is not None
     return {
         "observation_id": observation_id,
         "status": "uploaded",
-        "data_source": "demo",
+        "data_source": "api",
         "stored_at": record["stored_at"],
         "evidence_stored": evidence_path is not None,
-        "message": "Road update saved to the local demo API. Live road-risk storage is not connected.",
+        "message": (
+            "Road hazard saved with its location. Routes passing within 75 m now carry this risk."
+            if located and not payload.simulated else
+            "Road hazard saved. Without a GPS location it cannot be matched to a route."
+            if not located else
+            "Test hazard saved (marked simulated); it is excluded from route scoring."
+        ),
     }

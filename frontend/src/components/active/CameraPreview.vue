@@ -1,25 +1,36 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { Camera, CameraOff } from '@lucide/vue'
+import DetectionOverlay from '@/components/vision/DetectionOverlay.vue'
+import { captureVideoFrame } from '@/lib/frames'
+import type { VisionDetection } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   stream: MediaStream | null
   active: boolean
-  simulatedFinding?: boolean
-}>(), { simulatedFinding: false })
+  /** Recorded road video analysed instead of the live camera. */
+  videoSrc?: string | null
+  detections?: VisionDetection[]
+}>(), { videoSrc: null, detections: () => [] })
 
 const video = ref<HTMLVideoElement | null>(null)
 const isReady = ref(false)
-const isPortrait = computed(() => true)
+const mediaSize = ref({ width: 0, height: 0 })
 
-async function attachStream(stream: MediaStream | null) {
+async function attachSource() {
   await nextTick()
   isReady.value = false
-  if (!video.value) return
-  video.value.srcObject = stream
-  if (stream) {
+  const element = video.value
+  if (!element) return
+  if (props.stream) {
+    element.srcObject = props.stream
+  } else {
+    element.srcObject = null
+    if (props.videoSrc && element.src !== props.videoSrc) element.src = props.videoSrc
+  }
+  if (props.stream || props.videoSrc) {
     try {
-      await video.value.play()
+      await element.play()
       isReady.value = true
     } catch {
       isReady.value = false
@@ -27,40 +38,51 @@ async function attachStream(stream: MediaStream | null) {
   }
 }
 
-watch(() => props.stream, stream => void attachStream(stream), { immediate: true, flush: 'post' })
-onMounted(() => void attachStream(props.stream))
+function onLoaded() {
+  if (!video.value) return
+  mediaSize.value = { width: video.value.videoWidth, height: video.value.videoHeight }
+  isReady.value = true
+}
 
-function captureFrame(maxWidth = 320, quality = 0.38): string | undefined {
-  if (!video.value || video.value.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.value.videoWidth) return undefined
-  const canvas = document.createElement('canvas')
-  const scale = Math.min(1, maxWidth / video.value.videoWidth)
-  canvas.width = Math.round(video.value.videoWidth * scale)
-  canvas.height = Math.round(video.value.videoHeight * scale)
-  const context = canvas.getContext('2d')
-  if (!context) return undefined
-  context.drawImage(video.value, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', quality)
+watch(() => [props.stream, props.videoSrc], () => void attachSource(), { immediate: true, flush: 'post' })
+onMounted(() => void attachSource())
+
+function captureFrame(maxWidth = 640, quality = 0.7): string | undefined {
+  return captureVideoFrame(video.value, maxWidth, quality)
 }
 
 defineExpose({ video, captureFrame })
 </script>
 
 <template>
-  <div :class="['camera-preview', active ? 'camera-preview-active' : '']" :data-portrait="isPortrait">
-    <video v-if="stream" ref="video" autoplay muted playsinline aria-label="Live vehicle camera preview"></video>
-    <div v-if="!stream && active" class="presentation-road-feed" aria-label="Vehicle road analysis preview">
-      <div class="road-horizon"></div>
-      <div class="road-surface"><span class="road-center-line"></span></div>
-      <div class="road-hazard-shape"></div>
-    </div>
-    <div v-else-if="!stream" class="camera-placeholder">
+  <div :class="['camera-preview', active ? 'camera-preview-active' : '']" data-portrait="true">
+    <video
+      v-if="stream || videoSrc"
+      ref="video"
+      autoplay
+      muted
+      playsinline
+      :loop="!stream"
+      crossorigin="anonymous"
+      :aria-label="stream ? 'Live vehicle camera preview' : 'Recorded road video being analysed'"
+      @loadedmetadata="onLoaded"
+    ></video>
+    <DetectionOverlay
+      v-if="(stream || videoSrc) && mediaSize.width && detections.length"
+      :detections="detections"
+      :media-width="mediaSize.width"
+      :media-height="mediaSize.height"
+      fit="cover"
+      compact
+    />
+    <div v-if="!stream && !videoSrc" class="camera-placeholder">
       <CameraOff :size="30" aria-hidden="true" />
       <strong>Road camera is off</strong>
-      <span>Start a route to activate road analysis.</span>
+      <span>Turn on the camera to start road analysis.</span>
     </div>
-    <div v-if="stream && !isReady" class="camera-loading" aria-live="polite">Opening camera…</div>
-    <div v-if="simulatedFinding" class="detection-outline" aria-hidden="true"></div>
-    <div v-if="stream || active" class="camera-live-tag"><Camera :size="14" aria-hidden="true" /> Road analysis</div>
-    <span v-if="simulatedFinding" class="camera-finding-tag">HAZARD DETECTED</span>
+    <div v-if="(stream || videoSrc) && !isReady" class="camera-loading" aria-live="polite">Opening video…</div>
+    <div v-if="stream || videoSrc" class="camera-live-tag">
+      <Camera :size="14" aria-hidden="true" /> {{ stream ? 'Road analysis' : 'Recorded drive' }}
+    </div>
   </div>
 </template>

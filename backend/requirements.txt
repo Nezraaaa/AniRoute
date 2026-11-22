@@ -1,5 +1,17 @@
+# API
 fastapi>=0.116,<1.0
 uvicorn[standard]>=0.35,<1.0
 pydantic>=2.11,<3.0
 httpx>=0.28,<1.0
+python-multipart>=0.0.20,<1.0
+# Computer vision runtime
+# Install CPU PyTorch first for a smaller download (scripts/start.* does this):
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+ultralytics>=8.3,<9.0
+opencv-python-headless>=4.10
+numpy>=1.26
+pillow>=10.0
+# Optional faster CPU inference after `python ml/export.py`
+onnxruntime>=1.18
+# Tests
 pytest>=8.3,<10.0

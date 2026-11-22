@@ -77,6 +77,23 @@ function factorLabel(name: string, value: number) {
           />
         </span>
       </div>
+      <div class="route-card-metrics" aria-label="Route summary">
+        <span class="route-card-metric">
+          <Clock3 :size="14" aria-hidden="true" />
+          <strong>{{ route.travelTimeMinutes }} min</strong>
+          <small>time</small>
+        </span>
+        <span class="route-card-metric">
+          <MapPin :size="14" aria-hidden="true" />
+          <strong>{{ route.distanceKm.toFixed(1) }} km</strong>
+          <small>distance</small>
+        </span>
+        <span :class="['route-card-metric', `route-card-risk-${route.cropRiskLabel}`]">
+          <ShieldCheck :size="14" aria-hidden="true" />
+          <strong>{{ route.cropRiskScore ?? '—' }}</strong>
+          <small>risk score</small>
+        </span>
+      </div>
     </button>
 
     <section v-if="expanded" :id="`route-details-${route.id}`" class="route-floating-panel" role="dialog" :aria-label="`${categoryText[route.category]} details`">

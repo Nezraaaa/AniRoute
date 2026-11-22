@@ -9,7 +9,6 @@ import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import { useAniRouteStore } from '@/composables/useAniRouteStore'
-import { makePresentationRoutes } from '@/data/presentation'
 import { searchLocations } from '@/services/geocoding'
 import { calculateRoutes } from '@/services/routes'
 import type { Coordinates, LocationSuggestion, RouteOption } from '@/types/aniRoute'
@@ -19,6 +18,14 @@ const store = useAniRouteStore()
 const formPanel = ref<HTMLElement | null>(null)
 const generalError = ref('')
 const displayRoutes = computed(() => mergeDuplicateRoutes(store.routes))
+
+function routeRequestTrip() {
+  return {
+    ...store.trip,
+    originCoordinates: store.state.originCoordinates,
+    deliveryPointCoordinates: [...store.state.deliveryPointCoordinates],
+  }
+}
 
 function mergeDuplicateRoutes(routes: RouteOption[]): RouteOption[] {
   const unique = new Map<string, RouteOption>()
@@ -44,8 +51,7 @@ async function loadRoutes(initial = false) {
     if (initial) store.state.fieldErrors = {}
     return
   }
-  const requestMode = store.state.mode
-  if (!initial) store.state.loadingRoutes = true
+  store.state.loadingRoutes = true
   try {
     await Promise.all([
       resolveLocationCoordinates('origin'),
@@ -53,26 +59,18 @@ async function loadRoutes(initial = false) {
         ? store.trip.deliveryPoints.map((_, index) => resolveLocationCoordinates('destination', index))
         : [resolveLocationCoordinates('destination')]),
     ])
-    if (store.state.mode !== requestMode) return
-    const result = await calculateRoutes({ ...store.trip }, requestMode)
-    if (store.state.mode !== requestMode) return
+    const result = await calculateRoutes(routeRequestTrip())
     store.replaceRoutes(result.routes)
     store.state.routeSource = result.source
-    store.state.routeMessage = result.message || (result.source === 'presentation'
-      ? 'Crop-aware route options calculated for this scenario.'
-      : 'Route options received from AniRoute.')
+    store.state.routeMessage = result.message || 'Route options received from AniRoute.'
     store.state.selectedRouteId = result.recommendedRouteId
-    store.state.apiConnected = requestMode === 'live' && result.source === 'api'
+    store.state.apiConnected = true
   } catch (error) {
-    if (store.state.mode !== requestMode) return
     generalError.value = error instanceof Error ? error.message : 'We could not find routes. Check the trip details and try again.'
     store.state.apiConnected = false
-    if (store.state.mode === 'live') {
-      store.replaceRoutes([])
-      store.state.selectedRouteId = ''
-      store.state.routeSource = 'api'
-      store.state.routeMessage = generalError.value
-    }
+    store.replaceRoutes([])
+    store.state.selectedRouteId = ''
+    store.state.routeMessage = generalError.value
   } finally {
     store.state.loadingRoutes = false
   }
@@ -112,7 +110,6 @@ function handleLocationCleared(field: 'origin' | 'destination', index: number) {
 }
 
 async function resolveLocationCoordinates(field: 'origin' | 'destination', index?: number) {
-  if (store.state.mode === 'presentation') return
   const currentCoordinates = field === 'origin'
     ? store.state.originCoordinates
     : index !== undefined
@@ -128,13 +125,13 @@ async function resolveLocationCoordinates(field: 'origin' | 'destination', index
   if (query.trim().length < 2) return
 
   try {
-    const suggestions = await searchLocations(query, undefined, 'live')
+    const suggestions = await searchLocations(query)
     const match = suggestions.find(location => location.latitude !== null && location.longitude !== null)
     if (match && match.latitude !== null && match.longitude !== null) {
       setPointCoordinates(field, { latitude: match.latitude, longitude: match.longitude }, index)
     }
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : 'Location search is unavailable for this presentation corridor.')
+    throw new Error(error instanceof Error ? error.message : 'Location search is unavailable.')
   }
 }
 
@@ -155,7 +152,7 @@ function editTrip() {
 }
 
 onMounted(() => {
-  void loadRoutes(true)
+  if (!store.routes.length) void loadRoutes(true)
 })
 
 watch(() => store.trip.deliveryPoints.length, (count) => {
@@ -163,29 +160,6 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
   while (store.state.deliveryPointCoordinates.length < count) store.state.deliveryPointCoordinates.push(null)
   syncDestinationCoordinateSummary()
 }, { immediate: true })
-
-watch(() => store.state.mode, (mode) => {
-  generalError.value = ''
-  store.state.apiConnected = false
-  if (mode === 'presentation') {
-    const presentationRoutes = makePresentationRoutes({
-      ...store.trip,
-      cropLoads: store.trip.cropLoads.map(crop => ({ ...crop })),
-      deliveryPoints: [...store.trip.deliveryPoints],
-    })
-    store.replaceRoutes(presentationRoutes)
-    store.state.routeSource = 'presentation'
-    store.state.routeMessage = 'Crop-aware route options calculated for this presentation scenario.'
-    store.state.selectedRouteId = presentationRoutes.find(route => route.recommended)?.id ?? 'optimal'
-    return
-  }
-
-  store.replaceRoutes([])
-  store.state.selectedRouteId = ''
-  store.state.routeSource = 'api'
-    store.state.routeMessage = 'A connected route service is required for production operation.'
-  if (store.trip.origin.trim() && store.trip.destination.trim()) void loadRoutes()
-})
 </script>
 
 <template>
@@ -207,14 +181,13 @@ watch(() => store.state.mode, (mode) => {
           :trip="store.trip"
           :errors="store.state.fieldErrors"
           :loading="store.state.loadingRoutes"
-          :mode="store.state.mode"
           @find-routes="loadRoutes()"
           @location-selected="handleLocationSelected"
           @location-cleared="handleLocationCleared"
         />
         <div class="crop-guidance">
           <Info :size="17" aria-hidden="true" />
-          <p>Route risk is a simple guide from road and weather information. It is not a freshness or spoilage prediction.</p>
+          <p>Route risk is a guide from travel time, distance, crop sensitivity and camera-confirmed road hazards. It is not a freshness or spoilage prediction.</p>
         </div>
       </aside>
 
@@ -227,11 +200,11 @@ watch(() => store.state.mode, (mode) => {
           <span class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} options</span>
         </div>
 
-        <Alert variant="default" class="presentation-banner">
+        <Alert variant="default" class="route-info-banner">
           <Info :size="18" aria-hidden="true" />
           <div>
             <strong>Crop-aware route analysis</strong>
-            <p>Scores combine travel time, distance, road condition, flood exposure, temperature and crop sensitivity.</p>
+            <p>Road geometry and travel time come from OSRM. Scores combine travel time, distance, crop sensitivity and road hazards confirmed by AniRoute's camera. Weather and flood feeds are not connected yet.</p>
           </div>
         </Alert>
 
@@ -244,16 +217,23 @@ watch(() => store.state.mode, (mode) => {
           <div class="route-choice-heading">
             <div class="route-choice-copy">
               <h3 id="route-choice-heading" class="route-choice-title">Choose a route</h3>
-              <span class="route-choice-subtitle">Select a route to open its details over the map.</span>
+              <span class="route-choice-subtitle">Select a route to review its score and highlight the line on the map.</span>
             </div>
           </div>
 
           <div class="route-choice-panel">
-            <Alert v-if="displayRoutes.length === 0" variant="warning" class="empty-routes">
+            <Alert v-if="displayRoutes.length === 0 && store.state.loadingRoutes" variant="default" class="empty-routes" role="status">
+              <RouteIcon :size="18" aria-hidden="true" />
+              <div>
+                <strong>Finding routes…</strong>
+                <p>Asking the road-routing service for options.</p>
+              </div>
+            </Alert>
+            <Alert v-else-if="displayRoutes.length === 0" variant="warning" class="empty-routes">
               <Info :size="18" aria-hidden="true" />
               <div>
-                <strong>No routes found.</strong>
-                <p>Check your delivery details and try again.</p>
+                <strong>No routes yet.</strong>
+                <p>Enter the pickup and delivery points, then choose Find routes. Route planning needs an internet connection.</p>
               </div>
             </Alert>
 
@@ -276,7 +256,6 @@ watch(() => store.state.mode, (mode) => {
           <RouteMap
             :routes="store.routes"
             :selected-route-id="store.state.selectedRouteId"
-            :prototype-routes="store.state.mode === 'presentation'"
             :trip="store.trip"
             :origin-coordinates="store.state.originCoordinates"
             :destination-coordinates="store.state.destinationCoordinates"

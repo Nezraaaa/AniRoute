@@ -1,5 +1,4 @@
-import { makePresentationRoutes } from '@/data/presentation'
-import type { AppMode, DataSource, HazardType, RouteOption, RouteResult, TripInput } from '@/types/aniRoute'
+import type { DataSource, HazardType, RouteOption, RouteResult, TripInput } from '@/types/aniRoute'
 import { appConfig } from './config'
 import { BackendUnavailableError, postJson } from './api'
 
@@ -22,6 +21,7 @@ interface ApiRoute {
     name: string
     coordinates: { latitude: number; longitude: number }
     note: string
+    hazard_type?: HazardType
   }>
   risk_factors?: RouteOption['riskFactors']
   crop_profile_summary?: string
@@ -29,7 +29,7 @@ interface ApiRoute {
 
 interface ApiRouteResponse {
   routes: ApiRoute[]
-  data_source?: DataSource
+  data_source?: string
   message?: string
   recommended_route_id?: string
 }
@@ -55,44 +55,36 @@ function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
     cropProfileSummary: route.crop_profile_summary ?? 'Crop sensitivity is included in the route score.',
     explanation: route.explanation,
     recommended: route.recommended,
-    knownHazards: route.known_hazards ?? [],
+    knownHazards: (route.known_hazards ?? []).map(hazard => ({
+      id: hazard.id, name: hazard.name, coordinates: hazard.coordinates, note: hazard.note, hazardType: hazard.hazard_type,
+    })),
     source,
   }
 }
 
-function unwrapRouteResponse(data: ApiRouteResponse, fallbackSource: DataSource): RouteResult {
-  const source = data.data_source ?? fallbackSource
-  const routes = (data.routes ?? []).map(route => mapApiRoute(route, source))
+function unwrapRouteResponse(data: ApiRouteResponse): RouteResult {
+  const routes = (data.routes ?? []).map(route => mapApiRoute(route, 'api'))
   return {
     routes,
-    source,
+    source: 'api',
     message: data.message,
-    recommendedRouteId: data.recommended_route_id ?? routes.find(route => route.recommended)?.id ?? routes[0]?.id ?? 'optimal',
+    recommendedRouteId: data.recommended_route_id ?? routes.find(route => route.recommended)?.id ?? routes[0]?.id ?? '',
   }
 }
 
 function assertLiveRouteData(data: ApiRouteResponse) {
   if (data.data_source && data.data_source !== 'api') {
-    throw new Error('The connected route engine did not return production route data.')
+    throw new Error('The connected route engine did not return live route data.')
   }
 }
 
-export async function calculateRoutes(trip: TripInput, mode: AppMode = 'live'): Promise<RouteResult> {
-  if (mode === 'presentation') {
-    const routes = makePresentationRoutes(trip)
-    return {
-      routes, source: 'presentation',
-      message: 'Crop-aware route options calculated for this presentation scenario.',
-      recommendedRouteId: routes.find(route => route.recommended)?.id ?? 'optimal',
-    }
-  }
-
+export async function calculateRoutes(trip: TripInput): Promise<RouteResult> {
   try {
     const response = await postJson<ApiRouteResponse>(appConfig.paths.routes, trip)
     assertLiveRouteData(response)
-    const result = unwrapRouteResponse(response, 'api')
+    const result = unwrapRouteResponse(response)
     if (result.routes.length > 0) return result
-    throw new Error('No live route options were returned. Try again.')
+    throw new Error('No route options were returned. Try again.')
   } catch (error) {
     if (error instanceof BackendUnavailableError) {
       throw new Error('The connected route service is unavailable.')
@@ -105,20 +97,7 @@ export async function recalculateRoute(
   trip: TripInput,
   activeRouteId: string,
   hazard: { type: HazardType; roadSegmentId: string; observationId: string },
-  mode: AppMode = 'live',
 ): Promise<RouteResult & { changed: boolean }> {
-  if (mode === 'presentation') {
-    const routes = makePresentationRoutes(trip, activeRouteId)
-    const recommendedRouteId = routes.find(route => route.recommended)?.id ?? 'safer'
-    return {
-      routes,
-      source: 'presentation',
-      message: 'Route scores recalculated after the confirmed road finding.',
-      recommendedRouteId,
-      changed: recommendedRouteId !== activeRouteId,
-    }
-  }
-
   try {
     const response = await postJson<RecalculateResponse>(appConfig.paths.recalculate, {
       trip,
@@ -128,9 +107,9 @@ export async function recalculateRoute(
       observation_id: hazard.observationId,
     })
     assertLiveRouteData(response)
-    const result = unwrapRouteResponse(response, 'api')
+    const result = unwrapRouteResponse(response)
     if (result.routes.length > 0) return { ...result, changed: response.changed ?? false }
-    throw new Error('No live route options were returned after the road update.')
+    throw new Error('No route options were returned after the road update.')
   } catch (error) {
     if (error instanceof BackendUnavailableError) {
       throw new Error('The connected route recheck service is unavailable.')

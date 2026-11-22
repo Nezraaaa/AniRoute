@@ -9,6 +9,8 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+  // MapLibre's worker is an ES module (it imports a shared chunk), so bundle workers as ES modules.
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@': path.resolve(rootDir, 'src'),

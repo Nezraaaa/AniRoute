@@ -1,41 +1,135 @@
-# AniRoute
+# AniRoute — real-time road-hazard detection for crop-aware delivery
 
-AniRoute is a crop-aware agricultural transport optimizer prepared as a self-contained hackathon presentation. The Vue application runs entirely in the browser and does not require FastAPI.
+**CSST 106 Final Project · Real-World Perception and Computer Vision System**
+Field: agriculture and transportation · CV tasks: object detection, real-time video detection.
 
-## Run the presentation
+A phone or dashcam on a farm-produce vehicle detects road hazards with two YOLO models. **Model A** is
+fine-tuned from COCO-pretrained weights to find potholes and severe road damage. **Model B** is the
+COCO-pretrained model used as-is to find obstructions (people, animals, vehicles) in the driving lane.
+Hazards seen in 2 of 3 frames alert the driver; confirmed hazards are geotagged and raise the road risk
+of every route that passes them, weighted by how fragile the crop is, so the app can recommend a safer
+route.
 
-```sh
-cd frontend
-npm ci
-cp .env.example .env
-npm run dev
+![Vision Lab](presentation/screenshots/02-vision-lab.png)
+
+## Quick start
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 ```
 
-Open the address printed by Vite, usually `http://localhost:5173`.
+macOS / Linux / Git Bash:
 
-The opening screen is already populated with a 250 kg tomato shipment from Baguio to Calamba. It presents three routes with travel time, distance, road condition, flood and weather exposure, temperature exposure, a numeric Crop Transport Risk Score, and an explanation tied to the selected crop.
+```bash
+bash scripts/start.sh
+```
 
-Choose **Use this route** to open the active trip. The road-analysis presentation starts automatically, identifies a road finding, attaches its location, and asks for confirmation. Confirming the observation increases the affected segment's road-risk factor and recalculates the recommendation.
+The first run creates `.venv`, installs CPU PyTorch, the backend and the frontend packages (≈300 MB), and
+downloads the COCO model. Then it opens <http://127.0.0.1:5173> (API on <http://127.0.0.1:8000>).
+Requirements: Python 3.10–3.12, Node 22.12+.
 
-All route, weather, hazard, and risk values are illustrative presentation data. The risk score is interpretable and is not a spoilage percentage or safety guarantee.
+Manual start:
 
-## Project areas
+```bash
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+python -m pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --port 8000          # from the repository root
+cd frontend && npm ci && npm run dev
+```
 
-| Area | Location |
+## What to look at
+
+| Page | What it shows |
 | --- | --- |
-| Presentation scenario and crop profiles | `frontend/src/data/presentation.ts` |
-| Route planning | `frontend/src/pages/PlanPage.vue` |
-| Active trip and road analysis | `frontend/src/pages/ActiveTripPage.vue` |
-| Risk score presentation | `frontend/src/components/routes/RouteOptionCard.vue` |
-| Interactive map | `frontend/src/components/routes/RouteMap.vue` |
-| Future API contract | `backend/main.py` |
+| **Vision Lab** | Upload images, a recorded drive or use the webcam; boxes, confidence, model, threshold slider, CLAHE on/off, preprocessing stages |
+| **Plan → Active trip** | Live OSRM route options scored for the crop; during the trip the camera (or a recorded drive) is analysed in real time; confirm a hazard → routes re-scored |
+| **Evaluation** | Metrics, confusion matrix, PR/F1 curves, optimisation table, CLAHE ablation, speed, error gallery, limitations — read from `ml/reports/` |
+| **About** | Problem, objectives, beneficiaries, architecture, how the detector works, limits and privacy |
 
-## Automated checks
+## Train and evaluate the road-surface model (Model A)
 
-```sh
-cd frontend
-npm run typecheck
-npm run build
+No labelling needed — the datasets come from Roboflow Universe already labelled. Follow
+[`docs/DATASET.md`](docs/DATASET.md), then open
+[`ml/notebooks/train_colab.ipynb`](ml/notebooks/train_colab.ipynb) in Google Colab (free T4 GPU). It:
+
+1. merges the datasets and removes train/test near-duplicates (`ml/scripts/prepare_dataset.py`);
+2. trains the optimisation series E0 baseline → E4 (+ E7 from scratch) (`ml/train.py`);
+3. picks the best run on the validation split and evaluates it once on the test split (`ml/evaluate.py`);
+4. zips the weights and reports for the laptop.
+
+On the laptop:
+
+```bash
+python ml/export.py --formats onnx openvino      # faster CPU inference (auto-selected by the API)
+python ml/evaluate.py latency                    # speed table for this machine
+python ml/scripts/make_demo_video.py --video my_drive.mp4   # recorded drive for the demonstration
+python presentation/build_deck.py                # rebuild the slides with final figures
+cd frontend && node scripts/capture-screenshots.mjs          # fresh screenshots (servers running)
 ```
 
-Production integrations planned after the hackathon are listed in [frontend/needtoimplement.md](frontend/needtoimplement.md).
+## Reproduce every number
+
+```bash
+python ml/evaluate.py test        --data ml/data/aniroute/data.yaml --run-dir ml/runs/<selected>
+python ml/evaluate.py compare     --runs ml/runs/E0 ml/runs/E1 ml/runs/E2 ml/runs/E3 ml/runs/E4
+python ml/evaluate.py latency
+python ml/evaluate.py obstruction --data ml/data/obstruction_test/data.yaml
+python ml/evaluate.py smoothing   --video backend/samples/demo_drive.webm
+python ml/scripts/preprocess_demo.py
+```
+
+## Tests
+
+```bash
+python -m pytest -q backend/tests ml/tests          # API, vision service, metrics (no weights needed)
+cd frontend && npm run typecheck && npm test && npm run build
+npm run test:integration                            # against a running backend
+```
+
+## Project structure
+
+```
+backend/
+  main.py              FastAPI app: routing, hazard scanning/confirmation, route re-scoring
+  hazard_risk.py       confirmed hazards → route road-risk (75 m, severity × crop sensitivity)
+  vision/              preprocessing, YOLO wrapper, two-model integration, smoothing, API router
+  models/              aniroute-hazards-v1.pt (Model A, after training); yolo11n.pt auto-downloaded
+  samples/             sample images and recorded drive for the Vision Lab and trip
+ml/
+  notebooks/train_colab.ipynb   training + optimisation on Colab
+  scripts/                      prepare_dataset, preprocess_demo, make_demo_video
+  train.py · evaluate.py · export.py
+  evaluation/                   metrics (unit-tested), dataset reader, plots
+  reports/                      every metric and figure used by the app, docs and slides
+frontend/src/
+  pages/               PlanPage, ActiveTripPage, VisionLabPage, EvaluationPage, AboutPage
+  components/vision/   DetectionOverlay, LiveVideoDetector, PreprocessStages, ConfusionMatrix
+docs/                  problem, system overview, dataset, model card, evaluation, demo script, defense Q&A
+presentation/          build_deck.py → AniRoute_CSST106.pptx, screenshots/
+```
+
+## Documentation
+
+- [Problem and objectives](docs/PROBLEM_AND_OBJECTIVES.md) — real-world problem, sources, beneficiaries
+- [System overview](docs/SYSTEM_OVERVIEW.md) — architecture and detection flowchart
+- [Dataset](docs/DATASET.md) — sources, licences, step-by-step Roboflow guide
+- [Model card](docs/MODEL_CARD.md) — how YOLO works, pretrained vs fine-tuned, thresholds, limitations
+- [Evaluation](docs/EVALUATION.md) — protocol, metrics explained, results
+- [Demo script](docs/DEMO_SCRIPT.md) · [Defense Q&A](docs/DEFENSE_QA.md) · [Presentation outline](docs/PRESENTATION_OUTLINE.md)
+
+## Configuration
+
+Backend environment variables (see `backend/.env.example`): `ANIROUTE_MODEL_PATH`,
+`ANIROUTE_OBSTRUCTION_MODEL_PATH`, `ANIROUTE_MODEL_FORMAT` (`auto`/`pt`/`onnx`/`openvino`),
+`ANIROUTE_CONF_THRESHOLD`, `ANIROUTE_ROI_*`, `ANIROUTE_SMOOTHING_*`, `ANIROUTE_ROUTING_URL`, `CORS_ORIGINS`.
+
+All data is live: road geometry and ETA come from OSRM, place search from Nominatim (OpenStreetMap), and
+road risk from camera-confirmed hazards. Route planning and map tiles therefore need an internet connection;
+the Vision Lab and Evaluation pages work offline. Weather and flood feeds are not connected.
+
+## Credits and licences
+
+Ultralytics YOLO (AGPL-3.0) · OpenCV · FastAPI · Vue · MapLibre · © OpenStreetMap contributors, © CARTO ·
+OSRM · datasets as listed in `docs/DATASET.md` (RDD2022: Arya et al., arXiv:2209.08538).

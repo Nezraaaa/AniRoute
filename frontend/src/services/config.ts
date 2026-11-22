@@ -16,6 +16,11 @@ export const appConfig = {
     hazardConfirm: env.VITE_API_HAZARD_CONFIRM_PATH || '/api/hazards/confirm',
     health: env.VITE_API_HEALTH_PATH || '/api/health',
     geocode: env.VITE_API_GEOCODE_PATH || '/api/geocode/search',
+    visionDetect: '/api/vision/detect',
+    visionDetectFrame: '/api/vision/detect-frame',
+    modelInfo: '/api/model/info',
+    modelMetrics: '/api/model/metrics',
+    samples: '/api/samples',
   },
 }
 

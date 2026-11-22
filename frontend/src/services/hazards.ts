@@ -1,10 +1,11 @@
 import { appConfig } from './config'
 import { BackendUnavailableError, postJson } from './api'
-import type { AppMode, CameraScannerStatus, Coordinates, DataSource, DetectedHazard, HazardUploadResult } from '@/types/aniRoute'
+import { mapDetection, type ApiDetection } from './vision'
+import type { CameraScannerStatus, Coordinates, DetectedHazard, HazardType, HazardUploadResult, ScanFrameResult } from '@/types/aniRoute'
 
 interface ScannerResponse {
-  mode: 'presentation' | 'live'
   detection_available: boolean
+  supported_hazards?: HazardType[]
   message: string
 }
 
@@ -12,138 +13,113 @@ interface UploadResponse {
   observation_id: string
   status: 'uploaded'
   message: string
-  data_source: DataSource
+  data_source: string
   stored_at?: string
   evidence_stored?: boolean
 }
 
-interface DetectionResponse {
+interface ScanFrameResponse {
   detection_available: boolean
-  data_source?: DataSource
+  data_source?: string
+  detections?: ApiDetection[]
+  evidence_frame_data_url?: string | null
+  message?: string
   detection: null | {
     detection_id: string
-    hazard_type: DetectedHazard['type']
+    hazard_type: HazardType
+    label?: string
+    source_label?: string
+    model?: 'A' | 'B'
     detected_at: string
     confidence?: number
-    latitude?: number
-    longitude?: number
+    latitude?: number | null
+    longitude?: number | null
     route_id: string
     road_segment_id: string
-    distance_ahead_km?: number
+    distance_ahead_km?: number | null
+    frames_seen?: number
   }
 }
 
-export async function startHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<CameraScannerStatus> {
-  if (mode === 'presentation') {
-    return {
-      mode: 'presentation',
-      detectionAvailable: true,
-      message: 'Road-hazard analysis is active for the presentation route.',
-    }
-  }
-
+/** Ask the backend whether real detection is available for this trip. */
+export async function startHazardScanning(routeId: string): Promise<CameraScannerStatus> {
   try {
     const result = await postJson<ScannerResponse>(appConfig.paths.scannerStart, { route_id: routeId })
-    if (result.mode === 'presentation') {
-      return {
-        mode: 'live',
-        detectionAvailable: false,
-        message: 'Road detection is not available from the connected service.',
-      }
-    }
     return {
-      mode: 'live',
       detectionAvailable: result.detection_available,
+      supportedHazards: result.supported_hazards ?? [],
       message: result.message,
     }
   } catch (error) {
     return {
-      mode: 'live',
       detectionAvailable: false,
       message: error instanceof BackendUnavailableError
         ? 'Road detection service is unavailable.'
         : error instanceof Error
           ? error.message
-          : 'Live road detection is unavailable.',
+          : 'Road detection is unavailable.',
     }
   }
 }
 
-export async function stopHazardScanning(routeId: string, mode: AppMode = 'live'): Promise<void> {
-  if (mode === 'presentation') return
+export async function stopHazardScanning(routeId: string): Promise<void> {
   try {
     await postJson(appConfig.paths.scannerStop, { route_id: routeId })
   } catch {
-    // Browser media tracks and active frame sampling are still stopped locally.
+    // Browser media tracks and frame sampling are still stopped locally.
   }
 }
 
+export function mapScanFrameResponse(result: ScanFrameResponse): ScanFrameResult {
+  const detection = result.detection
+  const hazard: DetectedHazard | null = detection
+    ? {
+        id: detection.detection_id,
+        type: detection.hazard_type,
+        detectedAt: detection.detected_at,
+        confidence: detection.confidence,
+        coordinates: detection.latitude != null && detection.longitude != null
+          ? { latitude: detection.latitude, longitude: detection.longitude }
+          : undefined,
+        routeId: detection.route_id,
+        roadSegmentId: detection.road_segment_id,
+        distanceAheadKm: detection.distance_ahead_km ?? undefined,
+        simulated: false,
+        label: detection.label,
+        sourceLabel: detection.source_label,
+        model: detection.model,
+        framesSeen: detection.frames_seen,
+      }
+    : null
+  return {
+    available: result.detection_available,
+    detections: (result.detections ?? []).map(mapDetection),
+    hazard,
+    evidenceFrame: result.evidence_frame_data_url ?? null,
+    message: result.message ?? '',
+  }
+}
+
+/** Send one camera frame; the server runs both detectors plus 2-of-3 frame smoothing for this route. */
 export async function scanCameraFrame(
   routeId: string,
   frameDataUrl: string,
   coordinates?: Coordinates | null,
-  mode: AppMode = 'live',
-): Promise<DetectedHazard | null> {
-  if (mode === 'presentation') return null
-  const result = await postJson<DetectionResponse>(appConfig.paths.scannerFrame, {
+): Promise<ScanFrameResult> {
+  const result = await postJson<ScanFrameResponse>(appConfig.paths.scannerFrame, {
     route_id: routeId,
     captured_at: new Date().toISOString(),
     latitude: coordinates?.latitude,
     longitude: coordinates?.longitude,
     frame_data_url: frameDataUrl,
   })
-  if (result.data_source && result.data_source !== 'api') {
-    throw new Error('Road detection is not available from the connected service.')
-  }
-  const detection = result.detection
-  if (!result.detection_available || !detection) return null
-  const detectedCoordinates = detection.latitude !== undefined && detection.longitude !== undefined
-    ? { latitude: detection.latitude, longitude: detection.longitude }
-    : undefined
-  return {
-    id: detection.detection_id,
-    type: detection.hazard_type,
-    detectedAt: detection.detected_at,
-    confidence: detection.confidence,
-    coordinates: detectedCoordinates,
-    routeId: detection.route_id,
-    roadSegmentId: detection.road_segment_id,
-    distanceAheadKm: detection.distance_ahead_km,
-    simulated: false,
-  }
-}
-
-function savePresentationObservation(hazard: DetectedHazard, evidenceFrameDataUrl?: string): HazardUploadResult {
-  const id = `local-${hazard.id}`
-  const entry = {
-    ...hazard,
-    evidenceFrameIncluded: Boolean(evidenceFrameDataUrl),
-    savedAt: new Date().toISOString(),
-  }
-  try {
-    const previous = JSON.parse(localStorage.getItem('aniroute-road-observations') || '[]') as unknown[]
-    localStorage.setItem('aniroute-road-observations', JSON.stringify([...previous, entry].slice(-5)))
-  } catch {
-    // The active trip remains usable when browser storage is unavailable.
-  }
-  return {
-    id,
-    status: 'uploaded',
-    message: 'Road observation confirmed and added to the presentation risk model.',
-    source: 'local_presentation',
-    evidenceStored: Boolean(evidenceFrameDataUrl),
-  }
+  return mapScanFrameResponse(result)
 }
 
 export async function confirmHazard(
   hazard: DetectedHazard,
   evidenceFrameDataUrl?: string,
-  mode: AppMode = 'live',
 ): Promise<HazardUploadResult> {
-  if (mode === 'presentation') return savePresentationObservation(hazard, evidenceFrameDataUrl)
-  if (hazard.simulated) {
-    throw new Error('Presentation findings cannot be sent to a connected service.')
-  }
 
   try {
     const result = await postJson<UploadResponse>(appConfig.paths.hazardConfirm, {
@@ -156,6 +132,8 @@ export async function confirmHazard(
       road_segment_id: hazard.roadSegmentId,
       distance_ahead_km: hazard.distanceAheadKm,
       simulated: hazard.simulated,
+      model: hazard.model,
+      source_label: hazard.sourceLabel,
       evidence_frame_data_url: evidenceFrameDataUrl,
     })
     if (result.data_source !== 'api') {
@@ -165,7 +143,7 @@ export async function confirmHazard(
       id: result.observation_id,
       status: result.status,
       message: result.message,
-      source: result.data_source,
+      source: 'api',
       storedAt: result.stored_at,
       evidenceStored: result.evidence_stored,
     }
