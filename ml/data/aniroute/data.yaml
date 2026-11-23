@@ -1,0 +1,7 @@
+path: C:\Users\Nezra\Downloads\aniroute\aniroute\ml\data\aniroute
+train: train/images
+val: val/images
+test: test/images
+names:
+  0: pothole
+  1: severe_road_damage

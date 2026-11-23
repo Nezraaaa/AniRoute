@@ -71,6 +71,11 @@ presentation preparation, listed under **Not done yet**.
 - Documentation in `docs/`: problem and objectives, system overview, dataset, model card, evaluation,
   demo script, defense Q&A, presentation outline. `README.md` with setup and reproduction steps.
 - Screenshots in `presentation/screenshots/` (desktop and mobile).
+- Also in the repository: the dataset (`ml/data/raw` as downloaded, `ml/data/aniroute` as prepared for
+  training), the training runs `ml/runs/E0` and `ml/runs/E1` (weights, logs, curves), the exported
+  ONNX/OpenVINO models in `backend/models/`, the COCO base weights `yolo11n.pt`, and the course guide PDF.
+  Not in the repository: `.env` files, `.venv`, `node_modules`, caches, logs and local runtime data
+  (`backend/data/`).
 
 ## Removed or switched off (by decision)
 

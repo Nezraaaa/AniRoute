@@ -1,0 +1,10 @@
+path: .
+train: images/train
+val: images/valid
+test: images/test
+nc: 4
+names:
+  0: longitudinal_crack
+  1: transverse_crack
+  2: alligator_crack
+  3: pothole
