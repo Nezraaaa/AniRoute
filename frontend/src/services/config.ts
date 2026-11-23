@@ -4,7 +4,8 @@ export const defaultCartoStyleUrl = 'https://basemaps.cartocdn.com/gl/voyager-gl
 const configuredMapStyleUrl = (env.VITE_MAP_STYLE_URL || '').trim()
 
 export const appConfig = {
-  apiBaseUrl: (env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, ''),
+  // An empty value (LAN mode) means "same address as the web app"; the dev server forwards the calls.
+  apiBaseUrl: (env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, ''),
   mapStyleUrl: /^https?:\/\//i.test(configuredMapStyleUrl) ? configuredMapStyleUrl : defaultCartoStyleUrl,
   cartoBasemapKey: env.VITE_CARTO_BASEMAP_KEY || env.NEXT_PUBLIC_CARTO_BASEMAP_KEY || '',
   paths: {

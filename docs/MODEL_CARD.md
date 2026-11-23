@@ -82,7 +82,10 @@ See `docs/EVALUATION.md` and the in-app **Evaluation** page; all numbers are gen
 
 - Training data is from India (RDD2022 subset); Philippine roads, lighting and vehicles differ, and there is
   no labelled Philippine test set yet.
-- Small or distant potholes and faint cracks are the most common misses (see the size breakdown).
+- **The pothole class is unreliable.** Most training boxes labelled "pothole" in the public mirror are faded
+  lane paint; the model found 0 of 14 real pothole photos (`ml/reports/pothole_label_audit.md`). The crack
+  class is genuine.
+- Small or distant damage and faint cracks are the most common misses (see the size breakdown).
 - Wet asphalt, shadows and patched road can look like potholes (false alarms).
 - Night, heavy rain and motion blur reduce recall; CLAHE does not fix blur or glare.
 - COCO has no carabao, goat, fallen-tree, rock or landslide class; carabaos may or may not be detected

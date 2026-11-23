@@ -8,8 +8,8 @@ every API endpoint and page exercised), not taken from memory.
 
 ## Summary
 
-The system is complete and working end to end: a fine-tuned YOLO11 detector for **potholes and cracks**
-(severe road damage), real-time scanning in the web app, driver confirmation, and crop-aware route
+The system is complete and working end to end: a fine-tuned YOLO11 detector for **cracks** (severe road damage)
+(its pothole class is unreliable, see below), real-time scanning in the web app, driver confirmation, and crop-aware route
 planning with three route options. All automated tests pass. What remains is small housekeeping and
 presentation preparation, listed under **Not done yet**.
 
@@ -34,13 +34,18 @@ presentation preparation, listed under **Not done yet**.
 - **Evaluation on 444 held-out test images** (choices fixed on validation first):
   mAP@0.5 **0.278**, mAP@0.5:0.95 0.122, precision 41%, recall 31%, F1 0.355.
   Per class: pothole AP@0.5 0.197, severe road damage 0.358.
+- **Pothole label audit (final checks):** most "pothole" boxes in the public mirror are faded lane paint, so
+  the pothole AP measures agreement with faulty labels; the model found 0 of 14 real pothole photos.
+  Cracks are genuine (86% of crack alerts match a label). See `ml/reports/pothole_label_audit.md`.
 - **Optimisation series (validation):** E0 baseline 0.289 → E1 longer training **0.334** (+16%, deployed);
-  confidence threshold tuned 0.25 → 0.145 (F1 0.378 → 0.427); OpenVINO 26% faster than PyTorch.
+  confidence threshold tuned 0.25 → 0.145 (F1 0.378 → 0.427); OpenVINO 30% faster than PyTorch.
 - **Preprocessing:** EXIF orientation fix, 640 × 640 letterbox. CLAHE implemented and ablated: it lowered
   mAP, so it is off by default (decided on validation, confirmed on test).
-- **Speed:** 33 ms per frame end to end, about 30 FPS on the laptop CPU.
+- **Speed:** 32 ms per frame end to end, about 31 FPS on the laptop CPU.
+- **Water-filled pothole check (teammate's OpenCV rule):** kept in the code but **off by default**. It has no labelled
+  test set, and on the demo drive it boxed dry road (48 of 54 detections). `ANIROUTE_ENABLE_WATER_POTHOLE_DETECTOR=true` turns it on.
 - **False-alarm control:** hazard must appear in 2 of 3 frames, 20 s cooldown; on the 36 s demo drive,
-  alerts drop from 18 to 2.
+  alerts drop from 6 to 1 (deployed settings: confidence 0.40).
 - **Error analysis:** error gallery (false alarms, misses, wrong class), miss rate by object size and
   lighting, confusion matrix, written interpretation in `docs/EVALUATION.md`.
 - **Reproducible pipeline:** `ml/scripts/download_rdd2022.py`, `prepare_dataset.py` (leakage check),

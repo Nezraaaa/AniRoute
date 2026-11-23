@@ -1,0 +1,65 @@
+[
+ {
+  "file": "line0.wav",
+  "start": 1.4,
+  "duration": 2.318,
+  "text": "Every harvest deserves to arrive fresh.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line1.wav",
+  "start": 7.8,
+  "duration": 3.053,
+  "text": "Tell AniRoute what you're carrying, and where it's going.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line2.wav",
+  "start": 14.1,
+  "duration": 2.251,
+  "text": "It finds the real roads to your market,",
+  "tempo": 1.0
+ },
+ {
+  "file": "line3.wav",
+  "start": 16.85,
+  "duration": 3.659,
+  "text": "and scores each one for time, crop, and road safety.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line4.wav",
+  "start": 20.95,
+  "duration": 2.373,
+  "text": "Choose the gentlest road for your harvest.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line5.wav",
+  "start": 24.0,
+  "duration": 2.485,
+  "text": "Then follow it, every kilometer of the way.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line6.wav",
+  "start": 28.7,
+  "duration": 3.903,
+  "text": "Your phone's camera spots cracked, damaged road, in real time.",
+  "tempo": 1.017
+ },
+ {
+  "file": "line7.wav",
+  "start": 32.9,
+  "duration": 3.241,
+  "text": "Confirm with a tap, and AniRoute finds a safer way.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line8.wav",
+  "start": 37.2,
+  "duration": 2.414,
+  "text": "Protect the harvest, on the way to market.",
+  "tempo": 1.0
+ }
+]

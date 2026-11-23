@@ -2,44 +2,130 @@
 
 **CSST 106 Final Project · Real-World Perception and Computer Vision System**
 Field: agriculture and transportation · CV tasks: object detection, real-time video detection.
-A phone or dashcam on a farm-produce vehicle detects road damage with a YOLO11 model, pretrained on COCO and
-fine-tuned by us to find **potholes and cracks** (severe road damage). Obstruction
-detection (a COCO-pretrained second model) is implemented but switched off: the project focuses on road damage.
-Hazards seen in 2 of 3 frames alert the driver; confirmed hazards are geotagged and raise the road risk
-of every route that passes them, weighted by how fragile the crop is, so the app can recommend a safer
-route.
+A phone or dashcam on a farm-produce vehicle detects road damage with a YOLO11 model trained by us on
+labelled road images, for two classes: **cracks** (shown in the app as "severe road damage") and
+**potholes**. Crack detection works well (86% of crack alerts are real on held-out test images). The
+pothole class is unreliable: our own audit found that the public dataset mirror we used labelled mostly
+faded lane paint as "pothole" (details: [`ml/reports/pothole_label_audit.md`](ml/reports/pothole_label_audit.md)).
+A rule-based OpenCV check for water-filled potholes is **on** (`ANIROUTE_ENABLE_WATER_POTHOLE_DETECTOR`).
+It is experimental, with no labelled test set yet. Obstruction detection (a second model) is implemented
+but switched off. Hazards seen in 2 of 3 frames alert the driver. Confirmed hazards are geotagged and
+raise the road risk of every route that passes them, weighted by how fragile the crop is, so the app can
+recommend a safer route.
 
-When standing water hides the pothole texture, a supplemental OpenCV check looks for a smooth reflection
-inside a darker, horizontally elongated road depression before applying the same multi-frame confirmation.
+![A correct crack detection on a held-out test image](ml/reports/correct_detections/severe_road_damage_3_62.jpg)
 
-![Detections on held-out test images](ml/reports/sample_detections/test_pothole_06.jpg)
+## Setup: from a fresh clone to a phone
 
-## Quick start
+### 1. What you need
 
-Windows (PowerShell):
+| | Version | Check with |
+| --- | --- | --- |
+| Windows 10/11 (macOS or Linux also work) | | |
+| [Git](https://git-scm.com/downloads) | any recent | `git --version` |
+| [Python](https://www.python.org/downloads/) | **3.10–3.12** (3.12 recommended; tick "Add python.exe to PATH") | `python --version` |
+| [Node.js](https://nodejs.org/) | **22.12 or newer** (the LTS installer is fine) | `node --version` |
+
+You also need an internet connection (route planning, place search and map tiles are online services) and
+about 3 GB of free disk space. No GPU is needed, and you don't have to train anything: the trained model
+is in the repository.
+
+### 2. Get the code
+
+```bash
+git clone https://github.com/Nezraaaa/AniRoute.git
+cd AniRoute
+git switch feat/cv-defense
+```
+
+### 3. First start on the laptop
+
+Windows (PowerShell, from the `AniRoute` folder):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 ```
 
-macOS / Linux / Git Bash:
+macOS / Linux / Git Bash: `bash scripts/start.sh`
+
+The first run takes 5–15 minutes. It:
+1. creates a Python environment in `.venv`;
+2. installs CPU-only PyTorch and the backend packages (about 300 MB);
+3. installs the web app's packages;
+4. starts the API on <http://127.0.0.1:8000> and the web app on <http://127.0.0.1:5173>, and opens the browser.
+
+Later starts take a few seconds. When the page opens, the badge in the header should say the detector
+is online; it can show "starting" for a few seconds first.
+
+<details>
+<summary>Manual setup, if the script doesn't work</summary>
 
 ```bash
-bash scripts/start.sh
-```
-
-The first run creates `.venv`, installs CPU PyTorch, the backend and the frontend packages (≈300 MB), and
-downloads the COCO model. Then it opens <http://127.0.0.1:5173> (API on <http://127.0.0.1:8000>).
-Requirements: Python 3.10–3.12, Node 22.12+.
-
-Manual start:
-
-```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
 python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 python -m pip install -r backend/requirements.txt
-python -m uvicorn backend.main:app --port 8000          # from the repository root
-cd frontend && npm ci && npm run dev
+python -m uvicorn backend.main:app --port 8000          # terminal 1, from the repository root
+cd frontend && npm ci && cp .env.example .env && npm run dev   # terminal 2
 ```
+</details>
+
+### 4. Try it on the laptop
+
+1. **Plan:** enter a crop (e.g. Tomatoes, 250 kg), a vehicle, a pickup point and a delivery point, then
+   click **Find routes**. You get three route options (Recommended, Fastest and Safest) on the map.
+2. **Use this route**, then on the trip page click **Analyse recorded drive**. Detections appear on the
+   road camera, and an alert pops up once a hazard is seen in 2 of 3 frames.
+3. **Confirm** the alert: the hazard is pinned on the map and the routes are re-scored.
+
+To stop, close the script window or press **Ctrl+C**.
+
+### 5. Use it on a phone over Wi-Fi
+
+The laptop runs AniRoute, and the phone opens it in its browser. Phones only allow the camera and GPS on
+secure pages, so phone mode is served over **https** with a certificate made on the laptop.
+
+1. **Same network.** Connect the phone to the same Wi-Fi as the laptop. Venue or school Wi-Fi often blocks
+   devices from reaching each other; if so, turn on the laptop's **Mobile hotspot** (Windows: Settings →
+   Network & internet → Mobile hotspot) and connect the phone to it.
+2. **Allow the port (Windows, once per laptop).** Open **PowerShell as administrator** and run:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName 'AniRoute web app (5173)' -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow -Profile Any
+   ```
+
+3. **Start phone mode.** Stop the laptop mode first (both use port 5173), then:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts/start-lan.ps1
+   ```
+
+   macOS / Linux: `bash scripts/start-lan.sh`. The script prints an address such as
+   `https://192.168.1.127:5173`. The number changes between networks, so use the one it prints; on
+   Windows, `ipconfig` also shows it ("IPv4 Address").
+4. **Open it on the phone** and accept the certificate warning once:
+   - **iPhone (Safari):** Show Details → visit this website → Visit Website.
+   - **Android (Chrome):** Advanced → Proceed to 192.168.x.x (unsafe).
+
+   The connection is still encrypted; the warning only means the certificate isn't from a public
+   authority.
+5. **Allow camera and location** when the trip page asks. Then plan a trip, start it and use **Use live
+   camera**, or **Analyse recorded drive**.
+
+The laptop must stay on and running the script for the whole session. More detail:
+[`docs/PHONE_ON_WIFI.md`](docs/PHONE_ON_WIFI.md).
+
+### 6. If something goes wrong
+
+| Problem | Fix |
+| --- | --- |
+| `python` or `npm` is not recognised | Reinstall Python/Node with "Add to PATH" ticked, then open a new terminal. |
+| "running scripts is disabled" | Start it exactly as shown: `powershell -ExecutionPolicy Bypass -File …`. |
+| Port 8000 or 5173 is already in use | Another copy is still running: close its window, or restart the laptop. |
+| Header says "backend offline" | The API window closed or crashed: start the script again and read its messages. |
+| No routes / place search finds nothing | Check the internet connection: routing and search are online services. |
+| Phone can't open the page | Same Wi-Fi? Firewall rule added? Script still running? Try the laptop's hotspot. |
+| Phone camera or GPS doesn't start | Use the `https://` address, accept the certificate, and allow camera/location in the browser's site settings. |
 
 ## What to look at
 
@@ -96,7 +182,7 @@ backend/
   main.py              FastAPI app: routing, hazard scanning/confirmation, route re-scoring
   hazard_risk.py       confirmed hazards → route road-risk (75 m, severity × crop sensitivity)
   vision/              preprocessing, YOLO wrapper, two-model integration, smoothing, API router
-  models/              aniroute-hazards-v1.pt (Model A, after training); yolo11n.pt auto-downloaded
+  models/              aniroute-hazards-v1.pt (our trained model) and its ONNX/OpenVINO exports
   samples/             sample images and the recorded drive for the trip
 ml/
   run_cpu_pipeline.sh           the full CPU run used for the submitted results

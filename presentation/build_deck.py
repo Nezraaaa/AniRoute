@@ -1,31 +1,42 @@
-"""Build the CSST 106 presentation (visual-first, minimal text) from the project's real outputs.
+"""Build the CSST 106 presentation from the project's real outputs.
 
   python presentation/build_deck.py
 
-Reads screenshots from presentation/screenshots/ (frontend/scripts/capture-screenshots.mjs) and
-figures/metrics from ml/reports/ (ml/evaluate.py). Any result that does not exist yet is shown as a
-clearly marked "pending" placeholder - re-run this script after evaluation to fill it in.
-Speaker notes carry the details so the slides stay light.
+Design rules:
+- Canva-friendly. The deck uses only text boxes, basic shapes, plain pictures and solid backgrounds, in
+  Outfit and DM Sans (both built into Canva; installable copies are in presentation/fonts/).
+- Light on text: a few words per item, with details in the speaker notes.
+- Images are fitted whole and never cropped.
+- Amber labels highlight what to look at.
+- Each slide's speaker notes hold its script from presentation/SPEAKER_SCRIPT.md.
+
+Inputs:
+- Figures and metrics from ml/reports/ (ml/evaluate.py).
+- App captures from presentation/video/assets/ (presentation/video/capture-assets.mjs).
 """
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
-from pptx.util import Emu, Inches, Pt
+from pptx.util import Inches, Pt
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "ml" / "reports"
-SHOTS = ROOT / "presentation" / "screenshots"
-DETECTIONS = ROOT / "ml" / "reports" / "sample_detections"
-LOGO = ROOT / "frontend" / "src" / "assets" / "aniroute-logo.png"
+APP = ROOT / "presentation" / "screenshots" / "deck"   # app captures (capture-assets.mjs, ANIROUTE_ASSET_DIR)
+DETECTIONS = REPORTS / "sample_detections"
+CRACK = REPORTS / "crack"                  # crack-class figures (ml/scripts/crack_report.py)
+CORRECT = REPORTS / "correct_detections"   # verified correct detections (ml/scripts/select_correct_detections.py)
 OUT = ROOT / "presentation" / "AniRoute_CSST106.pptx"
+SCRIPT_FILE = ROOT / "presentation" / "SPEAKER_SCRIPT.md"
 
+TITLE_FONT, BODY_FONT = "Outfit", "DM Sans"
 GREEN_DARK = RGBColor(0x17, 0x3C, 0x2D)
 GREEN = RGBColor(0x1D, 0x65, 0x48)
 GREEN_LIGHT = RGBColor(0xE7, 0xF1, 0xE8)
@@ -33,15 +44,16 @@ PAPER = RGBColor(0xF6, 0xF7, 0xF2)
 INK = RGBColor(0x1E, 0x24, 0x1F)
 MUTED = RGBColor(0x5D, 0x6A, 0x60)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-AMBER = RGBColor(0xF5, 0x9E, 0x0B)
+AMBER = RGBColor(0xF5, 0xB0, 0x2E)
+AMBER_INK = RGBColor(0x3D, 0x2A, 0x05)
+ORANGE = RGBColor(0xF9, 0x73, 0x16)
 RED = RGBColor(0xDC, 0x26, 0x26)
-PURPLE = RGBColor(0x7C, 0x3A, 0xED)
-BLUE = RGBColor(0x25, 0x63, 0xEB)
+LINE = RGBColor(0xDF, 0xE6, 0xDF)
+SOFT_GREEN_TEXT = RGBColor(0xDC, 0xEC, 0xE0)
 
 prs = Presentation()
 prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
 BLANK = prs.slide_layouts[6]
-W, H = prs.slide_width, prs.slide_height
 
 
 def load_json(name: str) -> dict | None:
@@ -52,39 +64,58 @@ def load_json(name: str) -> dict | None:
 
 
 METRICS = load_json("metrics.json")
+HIGH_CONF = load_json("high_confidence_profile.json")
 LATENCY = load_json("latency.json")
 OPTIMIZATION = load_json("optimization.json")
-ABLATION = load_json("ablation.json")
-MODEL_B = load_json("model_b.json")
+STATS = load_json("dataset_stats.json")
+CRACK_METRICS = json.loads((REPORTS / "crack" / "crack_metrics.json").read_text(encoding="utf-8"))
+CRACK_EVAL = (METRICS or {}).get("per_class", {}).get("severe_road_damage", {})
 
 
-def background(slide, color=PAPER):
+def load_script() -> dict[int, str]:
+    try:
+        source = SCRIPT_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    parts = re.split(r"^## Slide (\d+)[^\n]*\n", source, flags=re.M)
+    script = {}
+    for number, body in zip(parts[1::2], parts[2::2]):
+        body = body.split("\n---")[0]
+        script[int(number)] = re.sub(r"\*\*|`", "", body).strip()
+    return script
+
+
+SCRIPT = load_script()
+
+
+# ------------------------------------------------------------------------------------------ helpers
+def new_slide(bg=PAPER):
+    slide = prs.slides.add_slide(BLANK)
     fill = slide.background.fill
     fill.solid()
-    fill.fore_color.rgb = color
+    fill.fore_color.rgb = bg
+    return slide
 
 
-def text(slide, x, y, w, h, value, size=18, bold=False, color=INK, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font="Segoe UI"):
-    box = slide.shapes.add_textbox(x, y, w, h)
-    frame = box.text_frame
+def text(slide, x, y, w, h, value, size=18, bold=False, color=INK, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font=BODY_FONT):
+    box_ = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    frame = box_.text_frame
     frame.word_wrap = True
     frame.vertical_anchor = anchor
-    frame.margin_left = frame.margin_right = Inches(0.05)
-    lines = value if isinstance(value, list) else [value]
-    for index, line in enumerate(lines):
+    frame.margin_left = frame.margin_right = Inches(0.04)
+    frame.margin_top = frame.margin_bottom = Inches(0.02)
+    for index, line in enumerate(value if isinstance(value, list) else [value]):
         paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
         paragraph.alignment = align
         run = paragraph.add_run()
         run.text = line
-        run.font.size = Pt(size)
-        run.font.bold = bold
+        run.font.size, run.font.bold, run.font.name = Pt(size), bold, font
         run.font.color.rgb = color
-        run.font.name = font
-    return box
+    return box_
 
 
-def rect(slide, x, y, w, h, fill=WHITE, line=None, shape=MSO_SHAPE.ROUNDED_RECTANGLE, radius=0.08):
-    item = slide.shapes.add_shape(shape, x, y, w, h)
+def box(slide, x, y, w, h, fill=WHITE, line=None, shape=MSO_SHAPE.ROUNDED_RECTANGLE, radius=0.12):
+    item = slide.shapes.add_shape(shape, Inches(x), Inches(y), Inches(w), Inches(h))
     item.fill.solid()
     item.fill.fore_color.rgb = fill
     if line is None:
@@ -98,346 +129,314 @@ def rect(slide, x, y, w, h, fill=WHITE, line=None, shape=MSO_SHAPE.ROUNDED_RECTA
     return item
 
 
-def card_text(shape, lines, size=14, color=INK, bold_first=True, align=PP_ALIGN.LEFT):
+def fill_text(shape, lines, size=16, color=INK, align=PP_ALIGN.CENTER, first_bold=True, first_font=TITLE_FONT):
     frame = shape.text_frame
     frame.word_wrap = True
-    frame.margin_left = frame.margin_right = Inches(0.15)
     frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    frame.margin_left = frame.margin_right = Inches(0.1)
     for index, line in enumerate(lines):
         paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
         paragraph.alignment = align
         run = paragraph.add_run()
         run.text = line
-        run.font.name = "Segoe UI"
-        run.font.size = Pt(size if index else size + 2)
-        run.font.bold = bold_first and index == 0
+        first = index == 0
+        run.font.name = first_font if first else BODY_FONT
+        run.font.size = Pt(size + (3 if first and len(lines) > 1 else 0))
+        run.font.bold = first_bold and first
         run.font.color.rgb = color
 
 
-def picture(slide, path: Path, x, y, w, h):
-    """Place an image inside a box, keeping its aspect ratio (centred)."""
-    if not path.exists():
-        return pending(slide, x, y, w, h, f"Pending: {path.relative_to(ROOT).as_posix()}")
-    with Image.open(path) as image:
-        iw, ih = image.size
-    scale = min(w / iw, h / ih)
-    pw, ph = int(iw * scale), int(ih * scale)
-    return slide.shapes.add_picture(str(path), x + (w - pw) // 2, y + (h - ph) // 2, pw, ph)
+def card(slide, x, y, w, h, head, body=None, fill=WHITE, color=GREEN_DARK, size=15):
+    item = box(slide, x, y, w, h, fill=fill, line=LINE if fill == WHITE else None)
+    fill_text(item, [head] + ([body] if body else []), size=size, color=color)
+    return item
 
 
-def crop_picture(slide, path: Path, x, y, w, h, top_fraction=0.0):
-    """Fill a box with an image, cropping the overflow (used for tall full-page screenshots)."""
-    if not path.exists():
-        return pending(slide, x, y, w, h, f"Pending: {path.relative_to(ROOT).as_posix()}")
-    with Image.open(path) as image:
-        iw, ih = image.size
-    pic = slide.shapes.add_picture(str(path), x, y, w, h)
-    box_ratio, image_ratio = w / h, iw / ih
-    if image_ratio < box_ratio:   # too tall → crop bottom (and an optional top offset)
-        visible = image_ratio / box_ratio
-        pic.crop_top = top_fraction
-        pic.crop_bottom = max(0.0, 1 - visible - top_fraction)
-    else:
-        visible = box_ratio / image_ratio
-        pic.crop_left = pic.crop_right = (1 - visible) / 2
-    pic.line.color.rgb = RGBColor(0xD9, 0xDF, 0xD8)
-    return pic
-
-
-def pending(slide, x, y, w, h, message):
-    box = rect(slide, x, y, w, h, fill=RGBColor(0xFF, 0xF7, 0xE6), line=AMBER)
-    card_text(box, ["Result pending", message, "Re-run presentation/build_deck.py after ml/evaluate.py"], size=12,
-              color=RGBColor(0x8A, 0x4D, 0x0C), align=PP_ALIGN.CENTER)
-    return box
+def pill(slide, x, y, label, fill=AMBER, color=AMBER_INK, size=13, center=False):
+    """A short highlight label. Width follows the text; (x, y) is the top-left, or the centre if center=True."""
+    width = 0.4 + len(label) * size * 0.0095
+    height = 0.2 + size * 0.0185
+    if center:
+        x, y = x - width / 2, y - height / 2
+    item = box(slide, x, y, width, height, fill=fill, radius=0.5)
+    fill_text(item, [label], size=size, color=color, first_font=BODY_FONT)
+    return item
 
 
 def title(slide, value, kicker=None):
-    background(slide)
     if kicker:
-        text(slide, Inches(0.6), Inches(0.35), Inches(8), Inches(0.35), kicker.upper(), size=11, bold=True, color=GREEN)
-    text(slide, Inches(0.6), Inches(0.62), Inches(12), Inches(0.8), value, size=30, bold=True, color=GREEN_DARK, font="Segoe UI Semibold")
+        text(slide, 0.6, 0.38, 9, 0.35, kicker.upper(), size=12, bold=True, color=GREEN)
+    text(slide, 0.6, 0.66, 12.1, 0.8, value, size=30, bold=True, color=GREEN_DARK, font=TITLE_FONT)
 
 
-def notes(slide, value: str):
-    slide.notes_slide.notes_text_frame.text = value
+def picture(slide, path: Path, x, y, w, h, border=True):
+    """Fit the whole image inside the box (never cropped). Returns the placed (x, y, w, h) in inches."""
+    if not path.exists():
+        item = box(slide, x, y, w, h, fill=RGBColor(0xFF, 0xF7, 0xE6), line=AMBER)
+        fill_text(item, ["Missing image", path.name], size=12, color=AMBER_INK)
+        return x, y, w, h
+    with Image.open(path) as image:
+        iw, ih = image.size
+    scale = min(w / iw, h / ih)
+    pw, ph = iw * scale, ih * scale
+    px, py = x + (w - pw) / 2, y + (h - ph) / 2
+    pic = slide.shapes.add_picture(str(path), Inches(px), Inches(py), Inches(pw), Inches(ph))
+    if border:
+        pic.line.color.rgb = LINE
+        pic.line.width = Pt(0.75)
+    return px, py, pw, ph
 
 
-def fmt(value, digits=3):
-    return "–" if value is None else f"{value:.{digits}f}"
+def label_on(slide, geom, fx, fy, label, number=None, size=13):
+    """Highlight label centred on a fractional point (fx, fy) of a placed picture."""
+    px, py, pw, ph = geom
+    pill(slide, px + fx * pw, py + fy * ph, f"{number}  {label}" if number else label, center=True, size=size)
 
 
-def arrow(slide, x1, y1, x2, y2):
-    line = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, x1, y1, x2, y2)
-    line.line.color.rgb = RGBColor(0x9B, 0xB3, 0xA2)
-    line.line.width = Pt(2)
-    line.line._get_or_add_ln().append(_arrow_head())
-    return line
+def arrow(slide, x, y, w=0.34, h=0.32, color=RGBColor(0x9B, 0xB3, 0xA2)):
+    return box(slide, x, y, w, h, fill=color, shape=MSO_SHAPE.RIGHT_ARROW)
 
 
-def _arrow_head():
-    from pptx.oxml.ns import qn
-    from lxml import etree
-    tail = etree.SubElement(etree.Element(qn("a:ln")), qn("a:tailEnd"))
-    tail.set("type", "triangle")
-    return tail
+def notes(slide, fallback: str):
+    slide.notes_slide.notes_text_frame.text = SCRIPT.get(len(prs.slides), fallback)
 
 
-# ---------------------------------------------------------------------------------------- slides
+def pct(v):
+    return f"{v:.0%}"
+
+
+# ------------------------------------------------------------------------------------------ slides
 # 1 Title
-s = prs.slides.add_slide(BLANK)
-background(s, GREEN_DARK)
-if LOGO.exists():
-    text(s, Inches(0.8), Inches(0.6), Inches(6), Inches(0.4), "CSST 106 · FINAL PROJECT", size=12, bold=True, color=RGBColor(0x9C, 0xC9, 0xAE))
-text(s, Inches(0.8), Inches(1.6), Inches(7), Inches(1.2), "AniRoute", size=60, bold=True, color=WHITE, font="Segoe UI Semibold")
-text(s, Inches(0.8), Inches(2.9), Inches(6.2), Inches(1.4),
-     "Real-time road-hazard detection for crop-aware farm-to-market delivery", size=24, color=RGBColor(0xDC, 0xEC, 0xE0))
-text(s, Inches(0.8), Inches(5.9), Inches(6), Inches(0.5), "Computer vision · YOLO object detection · Agriculture & transportation",
-     size=13, color=RGBColor(0x9C, 0xC9, 0xAE))
-picture(s, DETECTIONS / "test_severe_road_damage_01.jpg", Inches(7.4), Inches(1.0), Inches(5.4), Inches(5.5))
-notes(s, "Team names. One sentence: AniRoute uses a phone or dashcam to detect road hazards with YOLO and re-routes "
-         "perishable harvests away from them.")
+s = new_slide(GREEN_DARK)
+text(s, 0.8, 0.7, 6.5, 0.4, "CSST 106 · FINAL PROJECT", size=13, bold=True, color=RGBColor(0x9C, 0xC9, 0xAE))
+text(s, 0.8, 1.7, 6.6, 1.2, "AniRoute", size=66, bold=True, color=WHITE, font=TITLE_FONT)
+text(s, 0.8, 3.0, 6.2, 1.4, "Road-hazard detection for farm-to-market delivery", size=26, color=SOFT_GREEN_TEXT, font=TITLE_FONT)
+text(s, 0.8, 5.9, 6.4, 0.5, "Computer vision · Agriculture · Transportation", size=14, color=RGBColor(0x9C, 0xC9, 0xAE))
+g = picture(s, CORRECT / "severe_road_damage_3_62.jpg", 7.5, 0.9, 5.2, 5.6, border=False)
+label_on(s, g, 0.5, 0.07, "Our model: cracks found on an unseen road")
+notes(s, "Title.")
 
 # 2 Problem
-s = prs.slides.add_slide(BLANK)
+s = new_slide()
 title(s, "Harvests lose value on the way to market", "Problem")
 for index, (label, low, high, color) in enumerate([("Fruits", 5, 48, AMBER), ("Vegetables", 16, 40, RED)]):
-    y = Inches(2.1 + index * 1.35)
-    text(s, Inches(0.6), y, Inches(2), Inches(0.5), label, size=20, bold=True)
-    track = rect(s, Inches(2.6), y, Inches(6.5), Inches(0.55), fill=RGBColor(0xE5, 0xE9, 0xE3), shape=MSO_SHAPE.RECTANGLE)
-    span = rect(s, Inches(2.6 + 6.5 * low / 60), y, Inches(6.5 * (high - low) / 60), Inches(0.55), fill=color, shape=MSO_SHAPE.RECTANGLE)
-    text(s, Inches(9.3), y, Inches(3.5), Inches(0.55), f"{low}–{high}% postharvest loss", size=18, bold=True, color=INK, anchor=MSO_ANCHOR.MIDDLE)
-text(s, Inches(0.6), Inches(4.7), Inches(12), Inches(1.2),
-     ["Potholes and cracked pavement on farm-to-market roads add bruising and delay.",
-      "Drivers see hazards only when they reach them; route planners ignore how fragile the cargo is."], size=18, color=MUTED)
-text(s, Inches(0.6), Inches(6.7), Inches(12), Inches(0.4),
-     "Source: JICA, Data collection survey on the food value chain (Philippines) — openjicareport.jica.go.jp/pdf/1000035809.pdf",
-     size=10, color=MUTED)
-notes(s, "Quote the ranges, not a single number. Rough roads: World Bank Mindanao rural roads feature. "
-         "The gap: no tool combines today's road condition with crop sensitivity.")
+    y = 2.0 + index * 1.25
+    text(s, 0.6, y + 0.05, 2.0, 0.5, label, size=20, bold=True, font=TITLE_FONT)
+    box(s, 2.6, y, 6.5, 0.55, fill=RGBColor(0xE5, 0xE9, 0xE3), shape=MSO_SHAPE.RECTANGLE)
+    box(s, 2.6 + 6.5 * low / 60, y, 6.5 * (high - low) / 60, 0.55, fill=color, shape=MSO_SHAPE.RECTANGLE)
+    text(s, 9.3, y, 3.6, 0.55, f"{low}–{high}% lost", size=20, bold=True, anchor=MSO_ANCHOR.MIDDLE, font=TITLE_FONT)
+card(s, 0.6, 4.75, 5.9, 1.2, "Rough roads", "bruising and delays", fill=GREEN_LIGHT)
+card(s, 6.8, 4.75, 5.9, 1.2, "Hazards seen too late", "routes ignore fragile cargo", fill=GREEN_LIGHT)
+text(s, 0.6, 6.75, 12, 0.4, "Source: JICA food value chain survey, Philippines (postharvest loss ranges)", size=11, color=MUTED)
+notes(s, "Problem.")
 
 # 3 Objectives
-s = prs.slides.add_slide(BLANK)
+s = new_slide()
 title(s, "What the system must do", "Objectives")
-objectives = [("Detect", "Potholes and cracks in real time"), ("Test preprocessing", "CLAHE ablation, decided on validation"),
-              ("Avoid false alarms", "Tuned threshold + 2-of-3 frames"), ("Re-route", "Confirmed hazards raise route risk"),
-              ("Prove it", "P, R, F1, mAP, confusion matrix")]
+objectives = [("Detect", "road cracks, live"), ("Preprocess", "test what helps"), ("Fewer false alarms", "threshold + 2 of 3 frames"),
+              ("Re-route", "confirmed hazards raise risk"), ("Evaluate", "P · R · F1 · mAP")]
 for index, (head, body) in enumerate(objectives):
-    box = rect(s, Inches(0.6 + index * 2.5), Inches(2.3), Inches(2.3), Inches(3.0), fill=WHITE, line=RGBColor(0xDF, 0xE6, 0xDF))
-    badge = rect(s, Inches(0.8 + index * 2.5), Inches(2.5), Inches(0.6), Inches(0.6), fill=GREEN, shape=MSO_SHAPE.OVAL)
-    card_text(badge, [str(index + 1)], size=14, color=WHITE, align=PP_ALIGN.CENTER)
-    text(s, Inches(0.75 + index * 2.5), Inches(3.3), Inches(2.0), Inches(0.5), head, size=18, bold=True, color=GREEN_DARK)
-    text(s, Inches(0.75 + index * 2.5), Inches(3.9), Inches(2.0), Inches(1.3), body, size=14, color=MUTED)
-notes(s, "Each objective maps to a later slide: detection (results), preprocessing (ablation), smoothing (evaluation), "
-         "routing (demo), evaluation.")
+    x = 0.6 + index * 2.5
+    box(s, x, 2.2, 2.3, 3.1, fill=WHITE, line=LINE)
+    badge = box(s, x + 0.2, 2.42, 0.62, 0.62, fill=GREEN, shape=MSO_SHAPE.OVAL)
+    fill_text(badge, [str(index + 1)], size=16, color=WHITE)
+    text(s, x + 0.15, 3.25, 2.0, 0.9, head, size=19, bold=True, color=GREEN_DARK, font=TITLE_FONT)
+    text(s, x + 0.15, 4.15, 2.0, 1.0, body, size=15, color=MUTED)
+notes(s, "Objectives.")
 
 # 4 Significance
-s = prs.slides.add_slide(BLANK)
+s = new_slide()
 title(s, "Who benefits", "Significance")
-for index, (head, body) in enumerate([("Smallholder farmers", "Fewer bruised, spoiled harvests"), ("Haulers & drivers", "Early warning, smoother routes"),
-                                      ("Cooperatives & traders", "Routes that weigh crop fragility"), ("LGU road maintenance", "Geotagged, photo-verified damage reports")]):
+for index, (head, body) in enumerate([("Farmers", "fewer bruised harvests"), ("Drivers", "early hazard warning"),
+                                      ("Cooperatives", "routes that respect the crop"), ("Local government", "photo-verified road damage map")]):
     col, row = index % 2, index // 2
-    box = rect(s, Inches(0.6 + col * 6.2), Inches(2.0 + row * 2.3), Inches(5.9), Inches(2.0), fill=GREEN_LIGHT)
-    card_text(box, [head, body], size=18, color=GREEN_DARK)
-notes(s, "Concrete benefit per group. LGUs get a by-product: a map of confirmed road damage.")
+    card(s, 0.6 + col * 6.2, 2.0 + row * 2.3, 5.9, 2.0, head, body, fill=GREEN_LIGHT, size=18)
+notes(s, "Significance.")
 
 # 5 System overview
-s = prs.slides.add_slide(BLANK)
-title(s, "System overview", "Architecture")
-steps = [("Capture", "camera · video · image"), ("Preprocess", "EXIF · 640 px letterbox"), ("Model", "fine-tuned YOLO11\npotholes · cracks"),
-         ("Filter", "threshold\n2 of 3 frames"), ("Confirm", "driver · GPS · evidence"), ("Re-route", "risk × crop sensitivity")]
-positions = [(0.5, 3.0), (2.35, 3.0), (4.2, 3.0), (6.05, 3.0), (7.9, 3.0), (9.75, 3.0)]
-centers = []
-for (head, body), (x, y) in zip(steps, positions):
-    fill = GREEN if head.startswith("Model") else WHITE
-    box = rect(s, Inches(x), Inches(y), Inches(1.65), Inches(1.4), fill=fill, line=None if fill == GREEN else RGBColor(0xC9, 0xD6, 0xCB))
-    card_text(box, [head, body], size=11, color=WHITE if fill == GREEN else GREEN_DARK, align=PP_ALIGN.CENTER)
-    centers.append((Inches(x), Inches(y), Inches(1.65), Inches(1.4)))
-links = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
-for a, b in links:
-    ax, ay, aw, ah = centers[a]
-    bx, by, bw, bh = centers[b]
-    arrow(s, ax + aw, ay + ah // 2, bx, by + bh // 2)
-text(s, Inches(11.5), Inches(3.0), Inches(1.6), Inches(1.4), "Map + new route recommendation", size=12, bold=True, color=GREEN, anchor=MSO_ANCHOR.MIDDLE)
-text(s, Inches(0.6), Inches(6.2), Inches(12), Inches(0.6),
-     "Vue web app  →  FastAPI  →  OpenCV + Ultralytics YOLO (PyTorch / ONNX / OpenVINO, CPU)  →  OSRM routing  →  MapLibre map",
-     size=13, color=MUTED)
-notes(s, "One fine-tuned detector for potholes and cracks. "
-         "Alerts need the hazard in 2 of the last 3 frames. Confirmed hazards within 75 m of a route raise its road risk.")
+s = new_slide()
+title(s, "How AniRoute works", "System overview")
+steps = [("Capture", "camera or video"), ("Prepare", "orient · 640 px"), ("Our model", "cracked road"),
+         ("Filter", "0.40 · 2 of 3 frames"), ("Confirm", "tap or voice"), ("Re-route", "crop-aware risk")]
+for index, (head, body) in enumerate(steps):
+    x = 0.55 + index * 2.12
+    is_model = head == "Our model"
+    card(s, x, 2.6, 1.7, 1.7, head, body, fill=GREEN if is_model else WHITE, color=WHITE if is_model else GREEN_DARK, size=14)
+    if index < len(steps) - 1:
+        arrow(s, x + 1.74, 3.29)
+pill(s, 0.55 + 2 * 2.12 + 0.85, 4.75, "Trained by us", center=True)
+text(s, 0.6, 6.2, 12.1, 0.5, "Web app · FastAPI · YOLO11 · OSRM roads · MapLibre map — runs on a laptop CPU", size=14, color=MUTED, align=PP_ALIGN.CENTER)
+notes(s, "System overview.")
 
 # 6 Dataset
-s = prs.slides.add_slide(BLANK)
-title(s, "Dataset: public, already labelled", "Dataset")
-picture(s, REPORTS / "dataset_samples.png", Inches(0.6), Inches(1.6), Inches(7.4), Inches(5.3))
-picture(s, REPORTS / "dataset_class_distribution.png", Inches(8.2), Inches(1.6), Inches(4.6), Inches(3.4))
-stats = load_json("dataset_stats.json")
-summary = (f"Images — train {stats['images_per_split'].get('train', 0)}, val {stats['images_per_split'].get('val', 0)}, "
-           f"test {stats['images_per_split'].get('test', 0)}") if stats else "RDD2022 India subset"
-text(s, Inches(8.2), Inches(5.2), Inches(4.6), Inches(1.6),
-     [summary, "D40 → pothole · D00/D10/D20 → severe road damage", "Near-duplicates removed from val/test"], size=13, color=MUTED)
-notes(s, "Explain the YOLO label format, the 70/20/10 split, and why test images are never used for choices. "
-         "Sources and licences in docs/DATASET.md.")
+s = new_slide()
+title(s, "Dataset: labelled road images", "Dataset")
+picture(s, CRACK / "dataset_crack_samples.jpg", 0.6, 1.95, 8.2, 4.1)
+pill(s, 0.6 + 8.2 / 2, 1.72, "Red boxes = cracks drawn by human labellers", center=True)
+split = STATS["images_per_split"] if STATS else {"train": 1800, "val": 448, "test": 444}
+total = sum(split.get(k, 0) for k in ("train", "val", "test"))
+for index, (head, body) in enumerate([(f"{total:,}", "labelled road images"),
+                                      (f"{split.get('train', 0):,} / {split.get('val', 0)} / {split.get('test', 0)}", "train / validation / test"),
+                                      ("3 crack types", "along · across · alligator")]):
+    card(s, 9.1, 1.95 + index * 1.42, 3.65, 1.25, head, body, fill=GREEN_LIGHT, size=16)
+text(s, 0.6, 6.35, 12.1, 0.5, "RDD2022 road damage dataset, India subset (CC BY 4.0) · test images never used for training", size=13, color=MUTED)
+notes(s, "Dataset.")
 
 # 7 Preprocessing
-s = prs.slides.add_slide(BLANK)
-title(s, "Preprocessing: original vs processed", "Preprocessing")
-before_after = REPORTS / "preprocessing_before_after.png"
-if before_after.exists():
-    picture(s, before_after, Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.2))
-text(s, Inches(0.6), Inches(6.8), Inches(12), Inches(0.5),
-     "Orientation fix  ·  letterbox to 640 × 640 (no stretching)  ·  CLAHE tested, off by default (it lowered mAP)", size=14, color=MUTED)
-notes(s, "CLAHE equalises the histogram per 8×8 tile with a clip limit of 2.0, on the LAB lightness channel only, so colours "
-         "are unchanged. We measured it: on validation it lowered mAP, so the app keeps it off and offers it as an option. Augmentation is separate (training only).")
+s = new_slide()
+title(s, "Preparing each frame", "Preprocessing")
+g = picture(s, REPORTS / "preprocessing_before_after.png", 0.6, 1.95, 5.6, 5.3)
+for fx, label in [(1 / 6, "Original"), (0.5, "CLAHE"), (5 / 6, "Model input")]:
+    label_on(s, g, fx, -0.035, label, size=10)
+for index, (head, body) in enumerate([("Orientation fix", "photos upright"), ("Letterbox 640 × 640", "no stretching"),
+                                      ("CLAHE tested", "lowered accuracy → kept off")]):
+    card(s, 6.6, 1.75 + index * 1.8, 6.1, 1.5, head, body, fill=GREEN_LIGHT if index < 2 else WHITE, size=18)
+notes(s, "Preprocessing.")
 
-# 8 CV method
-s = prs.slides.add_slide(BLANK)
-title(s, "Method: YOLO, fine-tuned + pretrained", "Computer vision method")
-for index, (head, body) in enumerate([("Backbone", "edges, textures,\nshapes"), ("Neck", "multi-scale\nfeatures"), ("Head", "boxes · classes ·\nconfidence"), ("NMS", "keep best box\nper object")]):
-    box = rect(s, Inches(0.6 + index * 3.1), Inches(1.7), Inches(2.6), Inches(1.4), fill=GREEN_LIGHT)
-    card_text(box, [head, body], size=13, color=GREEN_DARK, align=PP_ALIGN.CENTER)
+# 8 Our model
+s = new_slide()
+title(s, "Our model: YOLO11 trained for road damage", "Computer vision method")
+for index, (head, body) in enumerate([("Backbone", "edges · textures"), ("Neck", "multi-scale"), ("Head", "box · class · score"), ("NMS", "best box")]):
+    x = 0.6 + index * 3.15
+    card(s, x, 1.75, 2.6, 1.45, head, body, fill=GREEN_LIGHT, size=16)
     if index < 3:
-        arrow(s, Inches(3.2 + index * 3.1), Inches(2.4), Inches(3.7 + index * 3.1), Inches(2.4))
-rows = [("", "Pretrained (COCO)", "Fine-tuned by us (AniRoute)"),
-        ("Data", "118k everyday photos, 80 classes", "1,800 road images, RDD2022 India"),
-        ("Classes", "people, cars, animals … (no road damage)", "pothole · severe road damage (cracks)"),
-        ("What we keep", "backbone + neck: edges, textures, shapes", "new head trained for our 2 classes"),
-        ("Threshold", "—", "confidence 0.145 (max F1 on validation)")]
-table = s.shapes.add_table(len(rows), 3, Inches(0.6), Inches(3.5), Inches(12.1), Inches(3.0)).table
-for r, row in enumerate(rows):
-    for c, value in enumerate(row):
-        cell = table.cell(r, c)
-        cell.text = value or " "
-        paragraph = cell.text_frame.paragraphs[0]
-        paragraph.runs[0].font.size = Pt(14)
-        paragraph.runs[0].font.bold = r == 0 or c == 0
-        paragraph.runs[0].font.color.rgb = WHITE if r == 0 else INK
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = GREEN if r == 0 else (WHITE if r % 2 else GREEN_LIGHT)
-notes(s, "One-stage detector: one forward pass. Transfer learning: keep the backbone's general features, retrain the head "
-         "for our classes, so two CPU training runs were enough. Two-stage detectors are slower on a CPU.")
+        arrow(s, x + 2.68, 2.3)
+facts = [("1,800", "road images we trained on"), ("3 crack types", "along · across · alligator"), ("40 epochs", "early stopping"), ("0.40", "app confidence threshold")]
+for index, (head, body) in enumerate(facts):
+    card(s, 0.6 + index * 3.15, 3.85, 2.85, 2.0, head, body, size=20)
+pill(s, 0.6, 6.25, "One pass per frame → real time on a laptop CPU", fill=GREEN, color=WHITE)
+notes(s, "Our model.")
 
-# 9 Implementation
-s = prs.slides.add_slide(BLANK)
+# 9 The working app
+s = new_slide()
 title(s, "The working application", "System implementation")
-crop_picture(s, SHOTS / "01-plan.png", Inches(0.6), Inches(1.5), Inches(6.3), Inches(5.4), top_fraction=0.0)
-crop_picture(s, SHOTS / "05-active-trip.png", Inches(7.1), Inches(1.5), Inches(5.6), Inches(5.4), top_fraction=0.0)
-notes(s, "Plan: live routes scored for crop fragility and confirmed hazards. Active trip: the camera or "
-         "recorded drive is scanned; confirmed hazards re-score routes. Stack: Vue 3, FastAPI, OpenCV, Ultralytics.")
+g1 = picture(s, APP / "plan-routes.png", 0.5, 1.55, 7.6, 5.3)
+label_on(s, g1, 0.14, 0.42, "Crop & load", "1")
+label_on(s, g1, 0.62, 0.34, "3 route options", "2")
+label_on(s, g1, 0.75, 0.82, "Live road map", "3")
+g2 = picture(s, APP / "camera-card.png", 8.4, 1.55, 4.45, 5.3)
+label_on(s, g2, 0.5, 0.40, "Live road camera", "4")
+label_on(s, g2, 0.5, 0.86, "Detects cracks", "5")
+notes(s, "Implementation.")
 
-# 10 Results
-s = prs.slides.add_slide(BLANK)
-title(s, "Detections on images the model never saw", "Results")
-shown = [DETECTIONS / name for name in ("test_pothole_06.jpg", "test_severe_road_damage_01.jpg", "test_pothole_02.jpg")]
-for index, path in enumerate(p for p in shown if p.exists()):
-    picture(s, path, Inches(0.6 + index * 4.1), Inches(1.6), Inches(3.9), Inches(4.6))
-text(s, Inches(0.6), Inches(6.4), Inches(12), Inches(0.5),
-     "Real output of the deployed model on held-out test images: potholes (orange) and cracks / severe road damage (red).", size=13, color=MUTED)
-notes(s, "Point at class and confidence. These images were never used in training.")
+# 10 Results: a correct crack detection on an unseen road, and what that looks like across the test set
+s = new_slide()
+title(s, "Our model finds cracks on roads it never saw", "Results")
 
-# 11 Evaluation
-s = prs.slides.add_slide(BLANK)
-title(s, "Evaluation on the test split", "Evaluation")
-if METRICS:
-    overall = METRICS["overall"]
-    tiles = [("mAP@0.5", fmt(overall["map50"])), ("mAP@0.5:0.95", fmt(overall["map50_95"])), ("Precision", f"{overall['precision']:.0%}"),
-             ("Recall", f"{overall['recall']:.0%}"), ("F1", fmt(overall["f1"]))]
-    for index, (label, value) in enumerate(tiles):
-        box = rect(s, Inches(0.6 + index * 2.45), Inches(1.5), Inches(2.25), Inches(1.3), fill=WHITE, line=RGBColor(0xDF, 0xE6, 0xDF))
-        card_text(box, [value, label], size=13, color=GREEN_DARK, align=PP_ALIGN.CENTER)
-    picture(s, REPORTS / "confusion_matrix.png", Inches(0.6), Inches(3.0), Inches(6.0), Inches(4.2))
-    picture(s, REPORTS / "pr_curve.png", Inches(6.8), Inches(3.0), Inches(5.9), Inches(4.2))
-    notes(s, f"Test split: {METRICS['dataset']['images']} images, {METRICS['dataset']['instances']} boxes. Threshold "
-             f"{METRICS['operating_point']['confidence']} chosen on validation. Diagonal = correct; last column = misses; last row = false alarms.")
-else:
-    pending(s, Inches(0.6), Inches(1.6), Inches(12.1), Inches(5.2), "Train Model A, then: python ml/evaluate.py test")
-    notes(s, "Metrics appear here after training and evaluation.")
 
-# 12 Optimisation + speed
-s = prs.slides.add_slide(BLANK)
-title(s, "Optimisation: baseline → selected model", "Evaluation")
-picture(s, REPORTS / "optimization_chart.png", Inches(0.6), Inches(1.5), Inches(6.2), Inches(4.6))
-picture(s, REPORTS / "speed_chart.png", Inches(7.0), Inches(1.5), Inches(5.7), Inches(4.6))
-line = "Selected run and accuracy gain appear after `evaluate.py compare`."
+def zoom_image(name: str, out_name: str, size: int = 700) -> Path:
+    """Square close-up of the damaged surface inside the example's detection box."""
+    summary = json.loads((CORRECT / "summary.json").read_text(encoding="utf-8"))
+    entry = next(item for item in summary["picked"] if item["file"] == name)
+    box_ = max(entry["boxes"], key=lambda b: b["confidence"])["box"]
+    with Image.open(CORRECT / name) as image:
+        w, h = image.size
+        cx, cy = (box_[0] + box_[2]) / 2, (box_[1] + box_[3]) / 2
+        side = min(max(min(box_[2] - box_[0], box_[3] - box_[1]) * 0.95, 160), min(w, h))
+        x0, y0 = min(max(0, cx - side / 2), w - side), min(max(0, cy - side / 2), h - side)
+        out = CORRECT / out_name
+        image.crop((int(x0), int(y0), int(x0 + side), int(y0 + side))).resize((size, size), Image.LANCZOS).save(out, quality=92)
+    return out
+
+
+g = picture(s, CORRECT / "severe_road_damage_3_62.jpg", 0.6, 1.65, 4.2, 4.2, border=False)
+label_on(s, g, 0.5, 0.07, "✓ Crack detected · 62%", size=14)
+zoom = zoom_image("severe_road_damage_3_62.jpg", "zoom_severe_road_damage_3_62.jpg")
+gz = picture(s, zoom, 4.95, 1.65, 2.35, 2.35)
+label_on(s, gz, 0.5, 0.1, "Zoom: the cracks", size=11)
+text(s, 4.95, 4.15, 2.4, 1.6, ["Green = our model", "Dashed = human label", "They line up."], size=13, color=MUTED)
+app = CRACK_METRICS["at_app_threshold"]
+picture(s, CRACK / "result_counts.png", 7.6, 1.65, 5.15, 2.9)
+for index, (value, label) in enumerate([(pct(app["precision"]), "of crack alerts are real"), (str(app["correct"]), "correct alerts"),
+                                        (str(app["false_alarms"]), "false alarms")]):
+    card(s, 7.6 + index * 1.75, 4.75, 1.6, 1.15, value, label, fill=GREEN_LIGHT if index == 0 else WHITE, size=13)
+pill(s, 13.333 / 2, 6.45, f"At the app's {app['threshold']:.0%} threshold: few false alarms, but many cracks still missed", fill=GREEN, color=WHITE, size=14, center=True)
+notes(s, "Results.")
+
+# 11 Evaluation (crack class, held-out test split)
+s = new_slide()
+title(s, "Evaluation: cracks on 444 held-out images", "Evaluation")
+app = CRACK_METRICS["at_app_threshold"]
+tiles = [(f"{CRACK_EVAL.get('ap50', CRACK_METRICS['ap50']):.3f}", "AP@0.5"), (f"{CRACK_EVAL.get('ap50_95', 0):.3f}", "AP@0.5:0.95"),
+         (pct(app["precision"]), "Precision"), (pct(app["recall"]), "Recall"), (f"{app['f1']:.2f}", "F1")]
+for index, (value, label) in enumerate(tiles):
+    card(s, 0.6 + index * 2.45, 1.55, 2.25, 1.25, value, label, fill=GREEN_LIGHT if index >= 2 else WHITE, size=18)
+pill(s, 0.6 + 3 * 2.45 + 1.1, 3.05, f"At threshold {app['threshold']:.2f} · precision is not accuracy", center=True)
+picture(s, CRACK / "pr_curve.png", 0.6, 3.45, 5.9, 3.7)
+picture(s, CRACK / "threshold_chart.png", 6.85, 3.45, 5.9, 3.7)
+notes(s, "Evaluation.")
+
+# 12 Optimisation and speed
+s = new_slide()
+title(s, "Making it better and faster", "Evaluation")
+picture(s, REPORTS / "optimization_chart.png", 0.6, 2.05, 6.1, 4.6)
+picture(s, REPORTS / "speed_chart.png", 6.95, 2.05, 5.8, 4.6)
+gain = "E0 → E1: +16% mAP (validation)"
 if OPTIMIZATION:
     training = [row for row in OPTIMIZATION["rows"] if row.get("kind") == "training"]
     base = next((row for row in training if row["id"] == "E0"), training[0])
     best = next(row for row in training if row["id"] == OPTIMIZATION["selected"])
-    line = f"E0 mAP@0.5 {base['map50']:.3f} → {best['id']} {best['map50']:.3f} (validation)"
-if LATENCY and LATENCY.get("system"):
-    line += f"  ·  end-to-end {LATENCY['system']['fps']} FPS on laptop CPU"
-text(s, Inches(0.6), Inches(6.3), Inches(12), Inches(0.6), line, size=15, bold=True, color=GREEN_DARK)
-notes(s, "One change per experiment, all decided on validation: E0 baseline, E1 longer training (selected); E5 confidence "
-         "threshold at max F1; E6 CLAHE auto vs off (off kept). Speed: OpenVINO/ONNX vs PyTorch on the same CPU.")
+    gain = f"Longer training ({base['id']} → {best['id']}): +{(best['map50'] / base['map50'] - 1):.0%} validation mAP"
+fps = LATENCY["system"]["fps"] if LATENCY and LATENCY.get("system") else None
+pill(s, 0.6, 1.5, gain)
+pill(s, 6.95, 1.5, f"OpenVINO fastest · {fps:.0f} FPS end to end" if fps else "OpenVINO fastest")
+notes(s, "Optimisation.")
 
-# 13 Error analysis
-s = prs.slides.add_slide(BLANK)
+# 13 Error analysis (crack examples from the test-split error gallery)
+s = new_slide()
 title(s, "Where it fails, and why", "Error analysis")
 gallery = REPORTS / "error_gallery"
-examples = []
-for kind in ("false_negatives", "false_positives", "misclassified"):
-    examples += sorted((gallery / kind).glob("*.jpg"))[:1]
-captions = {}
-try:
-    captions = json.loads((gallery / "captions.json").read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    pass
-if examples:
-    for index, path in enumerate(examples[:3]):
-        picture(s, path, Inches(0.6 + index * 4.1), Inches(1.6), Inches(3.9), Inches(3.9))
-        caption = captions.get(f"{path.parent.name}/{path.name}", path.parent.name.replace("_", " "))
-        text(s, Inches(0.6 + index * 4.1), Inches(5.6), Inches(3.9), Inches(0.9), caption, size=12, color=MUTED, align=PP_ALIGN.CENTER)
-else:
-    pending(s, Inches(0.6), Inches(1.6), Inches(12.1), Inches(4.8), "Error gallery is produced by ml/evaluate.py test")
-if METRICS:
-    sizes = METRICS["error_breakdown"]["miss_rate_by_size"]
-    parts = [f"{name}: {row['miss_rate']:.0%}" for name, row in sizes.items() if row["miss_rate"] is not None]
-    text(s, Inches(0.6), Inches(6.6), Inches(12), Inches(0.5), "Miss rate by object size — " + " · ".join(parts), size=14, bold=True, color=GREEN_DARK)
-notes(s, "White = ground truth, yellow frame = the error. Explain the cause of each: small/distant pothole, shadow or wet "
-         "asphalt, crack vs pothole confusion.")
+for index, (name, label) in enumerate((("false_negatives/01_data_002610.jpg", "Missed"), ("false_positives/02_data_002521.jpg", "False alarm"),
+                                       ("false_positives/06_data_002678.jpg", "Right crack, box drawn differently"))):
+    g = picture(s, gallery / name, 0.6 + index * 4.1, 1.6, 3.9, 3.9, border=False)
+    label_on(s, g, 0.5, 0.07, label, size=13 if index < 2 else 12)
+text(s, 0.6, 5.65, 12.1, 0.5, "White = human label · red = our model · yellow frame = the error", size=13, color=MUTED, align=PP_ALIGN.CENTER)
+sizes = CRACK_METRICS["miss_rate_by_size_at_app_threshold"]
+large_found = 1 - (sizes["large"]["miss_rate"] or 0)
+pill(s, 13.333 / 2, 6.45, f"Large, clear cracks are found most ({large_found:.0%}); thin or distant ones are usually missed", fill=GREEN, color=WHITE, size=14, center=True)
+notes(s, "Error analysis.")
 
-# 14 Demo divider
-s = prs.slides.add_slide(BLANK)
-background(s, GREEN_DARK)
-text(s, Inches(0.8), Inches(2.6), Inches(11.7), Inches(1.2), "Live demonstration", size=48, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-text(s, Inches(0.8), Inches(3.9), Inches(11.7), Inches(0.8), "Plan  →  active trip  →  recorded drive  →  detect  →  confirm  →  re-route  →  evaluation",
-     size=18, color=RGBColor(0xDC, 0xEC, 0xE0), align=PP_ALIGN.CENTER)
-notes(s, "Follow docs/DEMO_SCRIPT.md. Backup: screenshots in presentation/screenshots/.")
+# 14 Demo
+s = new_slide(GREEN_DARK)
+text(s, 0.8, 2.4, 11.7, 1.2, "Live demonstration", size=52, bold=True, color=WHITE, align=PP_ALIGN.CENTER, font=TITLE_FONT)
+for index, step in enumerate(["Plan", "Drive", "Detect", "Confirm", "Re-route"]):
+    chip = box(s, 2.05 + index * 1.9, 4.0, 1.6, 0.6, fill=RGBColor(0x24, 0x55, 0x40), radius=0.5)
+    fill_text(chip, [step], size=15, color=WHITE, first_font=BODY_FONT)
+notes(s, "Demo.")
 
 # 15 Limitations
-s = prs.slides.add_slide(BLANK)
+s = new_slide()
 title(s, "Limitations", "Honest assessment")
-limits = [("Foreign training data", "RDD2022 India roads differ from Philippine farm roads"),
-          ("No standing-water model", "Flooded-road data is scarce; drivers report it"),
-          ("COCO gaps", "No carabao, goat, fallen tree or landslide class"),
-          ("Hard conditions", "Small potholes, night, rain and blur reduce recall"),
-          ("Heuristic route weights", "Not validated loss figures; needs field trials"),
-          ("No distance estimate", "Hazard pinned at the vehicle's GPS position")]
+recall = pct(HIGH_CONF["test"]["recall"]) if HIGH_CONF else "low"
+recall = pct(CRACK_METRICS["at_app_threshold"]["recall"])
+limits = [("Cracks only", "other damage types need more labelled data"), ("Low recall at 0.40", f"finds {recall} of cracks"),
+          ("Foreign training data", "Indian roads, not Philippine"), ("Obstructions out of scope", "people, animals, trees"),
+          ("Heuristic route weights", "needs field trials"), ("No distance estimate", "pinned at vehicle GPS")]
 for index, (head, body) in enumerate(limits):
     col, row = index % 2, index // 2
-    box = rect(s, Inches(0.6 + col * 6.2), Inches(1.6 + row * 1.75), Inches(5.9), Inches(1.5), fill=WHITE, line=RGBColor(0xDF, 0xE6, 0xDF))
-    card_text(box, [head, body], size=14, color=INK)
-notes(s, "Be specific and link each limitation to evidence (error gallery, robustness table, test_local result if available).")
+    card(s, 0.6 + col * 6.2, 1.65 + row * 1.75, 5.9, 1.5, head, body, size=16)
+notes(s, "Limitations.")
 
-# 16 Real-world use & future work
-s = prs.slides.add_slide(BLANK)
+# 16 Next steps
+s = new_slide()
 title(s, "Real-world use and next steps", "Application")
-crop_picture(s, SHOTS / "05-active-trip-mobile.png", Inches(0.6), Inches(1.5), Inches(3.0), Inches(5.6), top_fraction=0.0)
-for index, (head, body) in enumerate([("Today", "Phone on the dashboard warns the driver and re-checks the route"),
-                                      ("Next", "Label local Philippine road images; add standing-water class"),
-                                      ("Then", "On-device inference (ONNX/TFLite); shared hazard map for LGUs"),
-                                      ("Validate", "Field trial measuring spoilage with and without AniRoute")]):
-    box = rect(s, Inches(4.0), Inches(1.5 + index * 1.42), Inches(8.7), Inches(1.25), fill=GREEN_LIGHT if index == 0 else WHITE,
-               line=None if index == 0 else RGBColor(0xDF, 0xE6, 0xDF))
-    card_text(box, [head, body], size=15, color=GREEN_DARK)
-notes(s, "Close with impact: fewer damaged harvests, safer drivers, and a living map of farm-to-market road conditions.")
+picture(s, APP / "phone-trip.png", 0.6, 1.5, 3.0, 5.6)
+for index, (head, body) in enumerate([("Today", "phone on the dashboard warns the driver"), ("Next", "more damage types · Philippine road images"),
+                                      ("Then", "on-phone model · shared hazard map"), ("Validate", "field trial on spoilage")]):
+    card(s, 4.0, 1.55 + index * 1.4, 8.7, 1.2, head, body, fill=GREEN_LIGHT if index == 0 else WHITE, size=16)
+notes(s, "Next steps.")
 
 # 17 Thank you
-s = prs.slides.add_slide(BLANK)
-background(s, GREEN_DARK)
-text(s, Inches(0.8), Inches(2.7), Inches(11.7), Inches(1.2), "Thank you", size=54, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-text(s, Inches(0.8), Inches(4.0), Inches(11.7), Inches(0.8), "Questions?", size=24, color=RGBColor(0xDC, 0xEC, 0xE0), align=PP_ALIGN.CENTER)
-notes(s, "See docs/DEFENSE_QA.md for prepared answers.")
+s = new_slide(GREEN_DARK)
+text(s, 0.8, 2.6, 11.7, 1.2, "Thank you", size=58, bold=True, color=WHITE, align=PP_ALIGN.CENTER, font=TITLE_FONT)
+text(s, 0.8, 3.95, 11.7, 0.8, "Questions?", size=26, color=SOFT_GREEN_TEXT, align=PP_ALIGN.CENTER, font=TITLE_FONT)
+notes(s, "Q&A.")
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
-prs.save(OUT)
-print(f"wrote {OUT.relative_to(ROOT)} ({len(prs.slides)} slides)"
-      + ("" if METRICS else " — evaluation pending: placeholders shown on slides 11-13"))
+try:
+    prs.save(OUT)
+except PermissionError:   # the deck is open in PowerPoint: save next to it instead of failing
+    OUT = OUT.with_name(OUT.stem + "_updated.pptx")
+    prs.save(OUT)
+    print("The main deck is open in PowerPoint; saved the new version next to it.")
+print(f"wrote {OUT.relative_to(ROOT)} ({len(prs.slides)} slides, notes from {SCRIPT_FILE.name}: {len(SCRIPT)} slides)")

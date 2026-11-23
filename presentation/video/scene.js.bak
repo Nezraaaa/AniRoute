@@ -1,0 +1,1822 @@
+// AniRoute — 30 s 3D product film. Real AniRoute UI captures on rendered devices, real route geometry
+// (OSRM, Baguio City → Calamba) on a 3D relief map of Luzon, one continuous camera with eased motion.
+//
+// Preview:  serve this folder and open scene.html          (plays in real time, loops)
+// Render:   node render.mjs                                  (frame-exact, 30 fps, via window.__frame)
+import * as THREE from 'three'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+
+const params = new URLSearchParams(location.search)
+const W = Number(params.get('w')) || 1920
+const H = Number(params.get('h')) || 1080
+const RENDER_MODE = params.get('mode') === 'render'
+const DURATION = 30                 // story time ends here
+const T0 = -4                       // story time starts here: the farmer prologue comes before the laptop
+const FILM_DURATION = 40            // seconds of film
+// After a 6 s prologue at normal pace, the story eases down to ~0.82x speed so the narration never rushes.
+const SLOW = (DURATION - T0 - 7.5) / 32.5
+function storyTime(T) {
+  if (T <= 6) return T0 + T
+  if (T <= 9) { const u = (T - 6) / 3; return T0 + 6 + 3 * u + (SLOW - 1) * 3 * (u ** 3 - u ** 4 / 2) }
+  return T0 + 7.5 + 1.5 * SLOW + (T - 9) * SLOW
+}
+const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z)
+
+// ───────────────────────────── easing / timing helpers ─────────────────────────────
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x))
+const seg = (t, a, b) => clamp((t - a) / (b - a))
+const smooth = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * (3 - 2 * u) }
+const ease = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)
+const easeOut = x => 1 - Math.pow(1 - x, 3)
+const easeOutQuint = x => 1 - Math.pow(1 - x, 5)
+const easeOutBack = (x, s = 1.5) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2)
+const lerp = (a, b, u) => a + (b - a) * u
+const pulse = (t, a, b) => Math.sin(Math.PI * seg(t, a, b))
+const DEG = Math.PI / 180
+
+function mulberry32(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0
+    let r = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Smooth keyframe track: monotone cubic Hermite (Fritsch–Butland tangents), so the camera never
+// overshoots a keyframe even when distances change by orders of magnitude; zero velocity at the ends.
+class Track {
+  constructor(keys) { this.keys = keys.map(([t, v]) => ({ t, v: Array.isArray(v) ? v : [v] })) }
+  at(t) {
+    const k = this.keys
+    if (t <= k[0].t) return k[0].v.slice()
+    if (t >= k[k.length - 1].t) return k[k.length - 1].v.slice()
+    let i = 0
+    while (t > k[i + 1].t) i++
+    const a = k[i], b = k[i + 1], dt = b.t - a.t, u = (t - a.t) / dt
+    const tan = j => {
+      if (j <= 0 || j >= k.length - 1) return k[j].v.map(() => 0)
+      const h0 = k[j].t - k[j - 1].t, h1 = k[j + 1].t - k[j].t
+      return k[j].v.map((_, c) => {
+        const d0 = (k[j].v[c] - k[j - 1].v[c]) / h0, d1 = (k[j + 1].v[c] - k[j].v[c]) / h1
+        if (d0 * d1 <= 0) return 0
+        const w1 = 2 * h1 + h0, w2 = h1 + 2 * h0
+        return (w1 + w2) / (w1 / d0 + w2 / d1)
+      })
+    }
+    const ma = tan(i), mb = tan(i + 1)
+    const h00 = 2 * u ** 3 - 3 * u ** 2 + 1, h10 = u ** 3 - 2 * u ** 2 + u, h01 = -2 * u ** 3 + 3 * u ** 2, h11 = u ** 3 - u ** 2
+    return a.v.map((_, c) => h00 * a.v[c] + h10 * dt * ma[c] + h01 * b.v[c] + h11 * dt * mb[c])
+  }
+}
+
+// ───────────────────────────── renderer / scene ─────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' })
+renderer.setPixelRatio(1)
+renderer.setSize(W, H)
+renderer.toneMapping = THREE.NeutralToneMapping
+renderer.toneMappingExposure = 1.0
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+document.body.appendChild(renderer.domElement)
+if (!RENDER_MODE) {
+  const fit = () => {
+    const s = Math.min(innerWidth / W, innerHeight / H)
+    renderer.domElement.style.width = `${W * s}px`
+    renderer.domElement.style.height = `${H * s}px`
+  }
+  addEventListener('resize', fit); fit()
+}
+
+const scene = new THREE.Scene()
+const pmrem = new THREE.PMREMGenerator(renderer)
+const FOG = new THREE.Color('#e9c697')
+scene.fog = new THREE.FogExp2(FOG, 0.0019)
+
+const camera = new THREE.PerspectiveCamera(40, W / H, 0.005, 9000)
+const cameraB = new THREE.PerspectiveCamera(40, W / H, 0.005, 9000)
+scene.add(camera)
+
+const SUN_DIR = V3(-0.72, 0.2, -1).normalize()
+const sun = new THREE.DirectionalLight('#ffd3a0', 2.3)
+sun.castShadow = true
+sun.shadow.mapSize.set(4096, 4096)
+sun.shadow.bias = -0.0002
+sun.shadow.normalBias = 0.02
+scene.add(sun, sun.target)
+scene.add(new THREE.HemisphereLight('#d9e6f2', '#5f5236', 0.55))
+const fill = new THREE.DirectionalLight('#ffe9cf', 0.45)
+fill.position.set(4, 3, 6)
+scene.add(fill)
+
+// ───────────────────────────── textures ─────────────────────────────
+const loader = new THREE.TextureLoader()
+const maxAniso = renderer.capabilities.getMaxAnisotropy()
+function loadTex(url, { srgb = true } = {}) {
+  return new Promise((resolve, reject) => loader.load(url, tex => {
+    if (srgb) tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = maxAniso
+    tex.generateMipmaps = true
+    tex.minFilter = THREE.LinearMipmapLinearFilter
+    resolve(tex)
+  }, undefined, reject))
+}
+const loadImg = url => new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url })
+const canvasTex = (canvas, srgb = true) => {
+  const t = new THREE.CanvasTexture(canvas)
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = maxAniso
+  return t
+}
+function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c }
+function roundedMask(w, h, r) {
+  const c = makeCanvas(w, h), g = c.getContext('2d')
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h)
+  g.fillStyle = '#fff'; g.beginPath(); g.roundRect(1, 1, w - 2, h - 2, r); g.fill()
+  return canvasTex(c, false)
+}
+function radialSprite(inner = 'rgba(255,255,255,1)', size = 256) {
+  const c = makeCanvas(size, size), g = c.getContext('2d')
+  const gr = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gr.addColorStop(0, inner); gr.addColorStop(0.25, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = gr; g.fillRect(0, 0, size, size)
+  return canvasTex(c)
+}
+function softShadowTex(w = 512, h = 512) {
+  const c = makeCanvas(w, h), g = c.getContext('2d')
+  g.filter = 'blur(28px)'; g.fillStyle = 'rgba(0,0,0,0.85)'
+  g.beginPath(); g.roundRect(70, 70, w - 140, h - 140, 40); g.fill()
+  return canvasTex(c)
+}
+const glowSprite = radialSprite()
+const shadowTex = softShadowTex()
+
+// ───────────────────────────── shared materials ─────────────────────────────
+const M = {
+  alu: new THREE.MeshPhysicalMaterial({ color: '#c9ccd2', metalness: 1, roughness: 0.3, clearcoat: 0.4, clearcoatRoughness: 0.25 }),
+  aluDark: new THREE.MeshPhysicalMaterial({ color: '#8d9198', metalness: 1, roughness: 0.38 }),
+  blackGlass: new THREE.MeshPhysicalMaterial({ color: '#07090a', metalness: 0.2, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.03 }),
+  rubber: new THREE.MeshStandardMaterial({ color: '#141516', roughness: 0.92 }),
+  tomato: new THREE.MeshPhysicalMaterial({ color: '#c92d1a', roughness: 0.34, clearcoat: 0.55, clearcoatRoughness: 0.22, sheen: 0.3, sheenColor: new THREE.Color('#ff7b5a') }),
+  stem: new THREE.MeshStandardMaterial({ color: '#3d7a2a', roughness: 0.7 }),
+  paintGreen: new THREE.MeshPhysicalMaterial({ color: '#1d6a45', metalness: 0.35, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.08 }),
+  paintCream: new THREE.MeshPhysicalMaterial({ color: '#f1efe7', metalness: 0.2, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 }),
+  chrome: new THREE.MeshPhysicalMaterial({ color: '#e7e9ec', metalness: 1, roughness: 0.12 }),
+  interior: new THREE.MeshStandardMaterial({ color: '#2a2e2c', roughness: 0.78 }),
+  interiorLight: new THREE.MeshStandardMaterial({ color: '#4a4f4b', roughness: 0.85 }),
+  windowGlass: new THREE.MeshPhysicalMaterial({ color: '#1d2a2a', metalness: 0, roughness: 0.04, transparent: true, opacity: 0.22, clearcoat: 1, depthWrite: false }),
+}
+function woodTexture(w = 1024, h = 256, base = '#a8743f') {
+  const c = makeCanvas(w, h), g = c.getContext('2d'), rnd = mulberry32(7)
+  g.fillStyle = base; g.fillRect(0, 0, w, h)
+  for (let i = 0; i < 140; i++) {
+    g.strokeStyle = `rgba(${60 + rnd() * 40},${35 + rnd() * 20},${15},${0.08 + rnd() * 0.14})`
+    g.lineWidth = 1 + rnd() * 3
+    const y = rnd() * h
+    g.beginPath(); g.moveTo(0, y)
+    for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x * 0.01 + i) * 4 + (rnd() - 0.5) * 2)
+    g.stroke()
+  }
+  const t = canvasTex(c); t.wrapS = t.wrapT = THREE.RepeatWrapping
+  return t
+}
+const woodTex = woodTexture()
+M.wood = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.72, color: '#ffffff' })
+M.woodLight = new THREE.MeshStandardMaterial({ map: woodTexture(1024, 256, '#c99a5c'), roughness: 0.75 })
+
+// ───────────────────────────── terrain: hilltop farm over a terraced valley ─────────────────────────────
+const perlin = new ImprovedNoise()
+function fbm(x, z, oct = 5, seed = 0) {
+  let a = 0, amp = 1, f = 1, n = 0
+  for (let i = 0; i < oct; i++) { a += amp * perlin.noise(x * f, seed + i * 7.31, z * f); n += amp; amp *= 0.5; f *= 2.03 }
+  return a / n
+}
+const VALLEY = -46
+const ROAD_Y = VALLEY - 6 + 0.05
+const ROAD_PTS = [V3(-330, 0, -318), V3(-220, 0, -352), V3(-110, 0, -340), V3(0, 0, -372), V3(105, 0, -396), V3(215, 0, -378), V3(330, 0, -410), V3(450, 0, -396)]
+const roadCurve = new THREE.CatmullRomCurve3(ROAD_PTS, false, 'centripetal')
+const ROAD_LEN = roadCurve.getLength()
+const roadSamples = roadCurve.getSpacedPoints(500)
+function distToRoad(x, z) {
+  const dz = Math.max(0, z + 300, -425 - z)
+  if (dz > 260) return dz
+  let best = 1e9
+  for (let i = 0; i < roadSamples.length; i++) {
+    const p = roadSamples[i], d = (p.x - x) ** 2 + (p.z - z) ** 2
+    if (d < best) best = d
+  }
+  return Math.sqrt(best)
+}
+const TERRACE_STEP = 2.2
+function terrainAt(x, z) {
+  const d0 = Math.hypot(x * 0.85, z - 6)
+  const dr = distToRoad(x, z)
+  // the farm hill: a plateau that falls away into the valley
+  const hill = VALLEY * smooth(9, 56, d0) - 6 * smooth(56, 220, d0)
+  // the valley sides climb again into terraced hills away from the road
+  const n = fbm(x * 0.0028 + 11.3, z * 0.0028 - 7.1, 5) * 0.5 + 0.5
+  const ridges = Math.pow(clamp(n), 1.2) * 210 * smooth(55, 300, dr) * smooth(60, 260, d0)
+  let h = hill + ridges + fbm(x * 0.02, z * 0.02, 3, 5) * 3 * smooth(10, 40, d0)
+  // the road corridor sits on the valley floor
+  const floor = VALLEY - 6
+  h = lerp(h, floor, 1 - smooth(9, 48, dr))
+  const plateau = d0 < 9
+  const terraced = !plateau && dr > 14
+  const fr = ((h - floor) / TERRACE_STEP) % 1
+  return { h, tier: Math.floor((h - floor) / TERRACE_STEP), riser: terraced && fr > 0.78, terraced, plateau, dr, d0, floor }
+}
+const TERRACE_COLORS = ['#7d9f4c', '#8fa953', '#a7ad5a', '#c0ae62', '#6f9446', '#9aa95a', '#b6a85c'].map(c => new THREE.Color(c))
+function buildTerrain() {
+  // non-uniform grid: dense around the farm hill and the road, coarse towards the horizon
+  const segs = 1000, half = 2200, a = 0.08, cx = 0, cz = -70
+  const warp = u => half * (a * u + (1 - a) * u * u * u)
+  const pos = [], colors = [], mask = [], idx = []
+  const grass = new THREE.Color('#76874a'), roadside = new THREE.Color('#8f9a5a'), slope = new THREE.Color('#7f9a4c'), tmp = new THREE.Color()
+  for (let j = 0; j <= segs; j++) {
+    for (let i = 0; i <= segs; i++) {
+      const x = cx + warp(i / segs * 2 - 1), z = cz + warp(j / segs * 2 - 1)
+      const r = terrainAt(x, z)
+      pos.push(x, r.h, z)
+      if (r.plateau) tmp.copy(grass)
+      else if (r.dr < 14) tmp.copy(roadside)
+      else tmp.copy(slope)
+      tmp.multiplyScalar(0.9 + 0.14 * (fbm(x * 0.06, z * 0.06, 2, 3) * 0.5 + 0.5) + (r.plateau ? 0.1 * fbm(x * 0.9, z * 0.9, 2, 8) : 0))
+      colors.push(tmp.r, tmp.g, tmp.b)
+      mask.push(r.plateau ? 0 : smooth(14, 22, r.dr) * smooth(9, 11, r.d0))
+    }
+  }
+  for (let j = 0; j < segs; j++) for (let i = 0; i < segs; i++) {
+    const a0 = j * (segs + 1) + i, b0 = a0 + 1, c0 = a0 + segs + 1, d0 = c0 + 1
+    idx.push(a0, c0, b0, b0, c0, d0)
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geo.setAttribute('terrace', new THREE.Float32BufferAttribute(mask, 1))
+  geo.setIndex(idx); geo.computeVertexNormals()
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 })
+  // Rice terraces drawn per pixel along the height contours: flat-lit treads, darker risers, and
+  // some flooded paddies that mirror the golden sky. Anti-aliased with fwidth, so no stair-stepping.
+  const pal = TERRACE_COLORS.map(c => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`).join(', ')
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.floorH = { value: VALLEY - 6 }
+    sh.uniforms.stepH = { value: TERRACE_STEP }
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+attribute float terrace;
+varying float vTerrace;
+varying vec3 vWPos;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vTerrace = terrace;
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying float vTerrace; varying vec3 vWPos; uniform float floorH; uniform float stepH;
+      float th(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      vec3 terracePal(float i){ vec3 P[7] = vec3[7](${pal}); return P[int(mod(i, 7.0))]; }
+      float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        float a = th(vec3(i, 1.0)), b = th(vec3(i + vec2(1.0, 0.0), 1.0)), c = th(vec3(i + vec2(0.0, 1.0), 1.0)), d = th(vec3(i + vec2(1.0, 1.0), 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
+      float gRiser; float gWet;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        float f = (vWPos.y - floorH) / stepH;
+        float tier = floor(f), fr = fract(f);
+        float w = clamp(fwidth(f) * 1.2, 0.002, 0.5);
+        float riser = smoothstep(0.86 - w, 0.86 + w, fr);
+        float region = vn(vWPos.xz / 160.0);
+        float hsh = th(vec3(tier, floor(region * 3.0), 2.0));
+        vec3 tread = terracePal(floor(hsh * 7.0)) * (0.9 + 0.16 * vn(vWPos.xz / 23.0));
+        vec3 riserCol = tread * vec3(0.48, 0.5, 0.36);
+        vec3 tc = mix(tread, riserCol, riser);
+        float far = smoothstep(0.08, 0.5, w);
+        tc = mix(tc, mix(tread, riserCol, 0.2), far);
+        float wet = step(0.74, th(vec3(tier, 5.0, 1.0))) * smoothstep(0.35, 0.55, vn(vWPos.xz / 90.0 + 7.0)) * (1.0 - riser) * (1.0 - far) * smoothstep(20.0, 40.0, length(vWPos.xz - vec2(0.0, 6.0)));
+        diffuseColor.rgb = mix(diffuseColor.rgb, tc, vTerrace);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.3, 0.34, 0.33), wet * vTerrace);
+        gRiser = riser * vTerrace * (1.0 - far); gWet = wet * vTerrace;
+      }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+roughnessFactor = mix(roughnessFactor, 0.05, gWet);`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+      { vec3 up = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz); normal = normalize(mix(normal, up, (1.0 - gRiser) * vTerrace * 0.85)); }`)
+  }
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.receiveShadow = true; mesh.castShadow = true
+  return mesh
+}
+
+// Distant mountain ridges, layered into the golden haze (aerial perspective baked into each layer).
+function buildRidges() {
+  const g = new THREE.Group()
+  const layers = [
+    { z: -1650, h: 240, col: '#a69a6c', seed: 2 },
+    { z: -2300, h: 330, col: '#c4aa7e', seed: 3 },
+    { z: -3100, h: 420, col: '#d9b98c', seed: 4 },
+  ]
+  layers.forEach((L, li) => {
+    const n = 420, w = 9000, pos = [], idx = []
+    for (let i = 0; i <= n; i++) {
+      const x = -w / 2 + (i / n) * w
+      const y = L.h * (0.45 + 0.55 * (fbm(x * 0.0011, L.seed * 10, 4, L.seed) * 0.5 + 0.5)) + L.h * 0.25 * Math.max(0, fbm(x * 0.004, L.seed, 3, L.seed + 2))
+      pos.push(x, -260, L.z, x, y, L.z)
+      if (i < n) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx)
+    const mat = new THREE.ShaderMaterial({
+      fog: false, depthWrite: true,
+      uniforms: { col: { value: new THREE.Color(L.col) }, fogc: { value: FOG }, top: { value: L.h } },
+      vertexShader: 'varying float vY; void main(){ vY = position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'varying float vY; uniform vec3 col; uniform vec3 fogc; uniform float top; void main(){ float k = smoothstep(-60.0, top, vY); gl_FragColor = vec4(mix(fogc, col, 0.85 * pow(k, 0.7)), 1.0); }',
+    })
+    const m = new THREE.Mesh(geo, mat); m.renderOrder = -5 + li
+    g.add(m)
+  })
+  return g
+}
+
+// Coconut palms around the farm hill and along the valley road.
+function frondTexture() {
+  const c = makeCanvas(128, 512), g = c.getContext('2d')
+  g.clearRect(0, 0, 128, 512)
+  const rnd = mulberry32(17)
+  g.strokeStyle = '#6b7c3a'; g.lineWidth = 4
+  g.beginPath(); g.moveTo(64, 0); g.lineTo(64, 512); g.stroke()
+  g.lineCap = 'round'
+  for (let y = 6; y < 505; y += 5) {
+    const len = (56 * Math.sin(Math.PI * Math.min(1, y / 470)) + 6) * (0.8 + rnd() * 0.3)
+    const shade = 70 + Math.floor(rnd() * 40)
+    for (const s of [-1, 1]) {
+      g.strokeStyle = `rgb(${shade - 25},${shade + 60},${shade - 30})`; g.lineWidth = 2 + rnd() * 1.4
+      g.beginPath(); g.moveTo(64, y); g.quadraticCurveTo(64 + s * len * 0.45, y + 6, 64 + s * len, y + 26 + rnd() * 10); g.stroke()
+    }
+  }
+  return canvasTex(c)
+}
+function buildPalmGeometries() {
+  const trunk = new THREE.CylinderGeometry(0.12, 0.2, 8, 8, 8)
+  trunk.translate(0, 4, 0)
+  const tp = trunk.attributes.position
+  for (let i = 0; i < tp.count; i++) { const y = tp.getY(i); tp.setX(i, tp.getX(i) + Math.pow(y / 8, 2) * 0.8) }
+  trunk.computeVertexNormals()
+  const fronds = []
+  for (let k = 0; k < 12; k++) {
+    const f = new THREE.PlaneGeometry(1.0, 3.6, 1, 10)
+    f.translate(0, 1.8, 0)
+    const p = f.attributes.position
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); p.setZ(i, -Math.pow(y / 3.6, 1.7) * 2.3); p.setX(i, p.getX(i) * (1 - 0.15 * (y / 3.6))) }
+    f.rotateX(-Math.PI / 2 + (k < 6 ? 0.75 : 0.25))
+    f.rotateY((k / 6) * Math.PI * 2 + (k < 6 ? 0 : 0.5))
+    f.translate(0.8, 8, 0)
+    fronds.push(f)
+  }
+  const crown = mergeGeometries(fronds)
+  crown.computeVertexNormals()
+  return { trunk, crown }
+}
+function scatterVegetation(group) {
+  const rnd = mulberry32(42)
+  const palms = buildPalmGeometries()
+  const trunkMat = new THREE.MeshStandardMaterial({ color: '#7d6a50', roughness: 0.9 })
+  const frondMat = new THREE.MeshStandardMaterial({ map: frondTexture(), alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.7 })
+  const spots = []
+  for (let i = 0; i < 120; i++) {
+    const u = rnd(), p = roadCurve.getPointAt(u), tng = roadCurve.getTangentAt(u)
+    const side = rnd() < 0.5 ? -1 : 1, off = 8 + rnd() * 26
+    spots.push(V3(p.x - tng.z * side * off, 0, p.z + tng.x * side * off))
+  }
+  for (let i = 0; i < 90; i++) {
+    const ang = -Math.PI * (0.05 + rnd() * 0.9), r = 16 + rnd() * 120
+    const v = V3(Math.cos(ang) * r * 1.2, 0, Math.sin(ang) * r + 2)
+    if (Math.abs(v.x) < 14 && v.z > -34) continue
+    spots.push(v)
+  }
+  spots.push(V3(-11, 0, 3), V3(12, 0, 6.5))
+  const trunkI = new THREE.InstancedMesh(palms.trunk, trunkMat, spots.length)
+  const crownI = new THREE.InstancedMesh(palms.crown, frondMat, spots.length)
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = V3()
+  spots.forEach((p, i) => {
+    p.y = terrainAt(p.x, p.z).h - 0.2
+    q.setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.16, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.16))
+    const k = 0.75 + rnd() * 0.5; s.set(k, k, k)
+    m4.compose(p, q, s); trunkI.setMatrixAt(i, m4); crownI.setMatrixAt(i, m4)
+  })
+  trunkI.castShadow = crownI.castShadow = true
+  group.add(trunkI, crownI)
+  // low shrubs on terrace edges (smooth, clustered)
+  const blob = mergeGeometries([new THREE.SphereGeometry(1, 14, 10), new THREE.SphereGeometry(0.75, 12, 8).translate(0.9, -0.15, 0.2), new THREE.SphereGeometry(0.7, 12, 8).translate(-0.7, -0.2, -0.3)])
+  const shrubI = new THREE.InstancedMesh(blob, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }), 1600)
+  const cols = ['#4b6f30', '#57793a', '#3f6329', '#66833f'].map(c => new THREE.Color(c))
+  let n = 0
+  for (let tries = 0; tries < 30000 && n < 1600; tries++) {
+    const x = (rnd() - 0.5) * 1400, z = -40 - rnd() * 900
+    const r = terrainAt(x, z)
+    if (!r.terraced || r.dr < 16 || rnd() < 0.5) continue
+    const k = 0.9 + rnd() * 1.6
+    q.setFromEuler(new THREE.Euler(0, rnd() * 6, 0)); s.set(k, k * 0.7, k)
+    m4.compose(V3(x, r.h + k * 0.3, z), q, s)
+    shrubI.setMatrixAt(n, m4); shrubI.setColorAt(n, cols[n % cols.length]); n++
+  }
+  shrubI.count = n; shrubI.castShadow = true
+  group.add(shrubI)
+}
+
+// Sky dome with golden-hour gradient and sun.
+const skyMaterial = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { sunDir: { value: SUN_DIR } },
+  vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `varying vec3 vDir; uniform vec3 sunDir;
+    vec3 lin(vec3 c){ return pow(c, vec3(2.2)); }
+    void main(){
+      vec3 d = normalize(vDir); float h = d.y;
+      vec3 horizon = lin(vec3(0.97,0.80,0.6)); vec3 zen = lin(vec3(0.55,0.70,0.80)); vec3 low = lin(vec3(0.86,0.72,0.55));
+      vec3 col = mix(horizon, zen, smoothstep(0.0, 0.65, h));
+      col = mix(col, low, smoothstep(0.0, -0.25, h));
+      float s = max(dot(d, sunDir), 0.0);
+      col += lin(vec3(1.0,0.74,0.46)) * pow(s, 7.0) * 0.5;
+      col += vec3(1.0,0.84,0.62) * pow(s, 120.0) * 1.1;
+      col += vec3(1.0,0.95,0.86) * smoothstep(0.99935, 0.99965, s) * 5.0;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+})
+const sky = new THREE.Mesh(new THREE.SphereGeometry(7000, 48, 24), skyMaterial)
+sky.renderOrder = -10
+scene.add(sky)
+// Image-based lighting from the same golden sky, so metal, glass and water reflect it.
+{
+  const envScene = new THREE.Scene()
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 48, 24), skyMaterial))
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(100, 32), new THREE.MeshBasicMaterial({ color: '#6f7a45' }))
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -8; envScene.add(ground)
+  scene.environment = pmrem.fromScene(envScene, 0.02).texture
+  scene.environmentIntensity = 0.75
+}
+
+// ───────────────────────────── glass UI cards ─────────────────────────────
+function makeGlassCard(tex, width, { radius = 0.045, glass = true, shadow = true } = {}) {
+  const img = tex.image, aspect = img.height / img.width, height = width * aspect
+  const group = new THREE.Group()
+  const mats = []
+  const face = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.93, 0.93, 0.93), alphaMap: roundedMask(512, Math.round(512 * aspect), 512 * radius), transparent: true, toneMapped: true })
+  mats.push(face)
+  const faceMesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), face)
+  faceMesh.position.z = 0.0015 * width
+  faceMesh.renderOrder = 3
+  group.add(faceMesh)
+  if (glass) {
+    const g = new THREE.MeshPhysicalMaterial({ color: '#ffffff', metalness: 0, roughness: 0.12, transmission: 1, thickness: 0.4 * width, ior: 1.42, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, specularIntensity: 1 })
+    mats.push(g)
+    const slab = new THREE.Mesh(new RoundedBoxGeometry(width * 1.035, height + width * 0.035, width * 0.02, 4, width * 0.03), g)
+    slab.position.z = -0.009 * width
+    group.add(slab)
+  }
+  if (shadow) {
+    const sm = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0.38, color: '#000000' })
+    mats.push(sm)
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(width * 1.35, height * 1.35 + width * 0.2), sm)
+    sh.position.set(width * 0.03, -width * 0.05, -0.06 * width)
+    sh.renderOrder = 1
+    group.add(sh)
+  }
+  group.userData = { mats, baseOpacity: mats.map(m => m.opacity), width, height, face: faceMesh }
+  return group
+}
+function setOpacity(group, o) {
+  const { mats, baseOpacity } = group.userData
+  mats.forEach((m, i) => { m.opacity = baseOpacity[i] * o; m.transparent = true })
+  group.visible = o > 0.002
+}
+
+// ───────────────────────────── captions (screen-space, composited after grading) ─────────────────────────────
+const captionScene = new THREE.Scene()
+const captionCam = new THREE.PerspectiveCamera(30, W / H, 0.1, 10)
+const CAP_Z = -3
+const capVisH = 2 * Math.abs(CAP_Z) * Math.tan(15 * DEG), capVisW = capVisH * (W / H)
+function makeCaption({ eyebrow = '', title, title2 = '', align = 'left' }) {
+  const cw = 2400, ch = 560, c = makeCanvas(cw, ch), g = c.getContext('2d')
+  g.textAlign = align; g.textBaseline = 'alphabetic'
+  const x = align === 'left' ? 24 : cw - 24
+  g.shadowColor = 'rgba(10,22,14,0.55)'; g.shadowBlur = 36
+  if (eyebrow) {
+    g.font = '600 40px "DM Sans"'; g.letterSpacing = '9px'; g.fillStyle = '#f6d48c'
+    g.fillText(eyebrow.toUpperCase(), x, 120)
+  }
+  g.letterSpacing = '-1px'; g.fillStyle = '#ffffff'; g.font = '600 104px "Outfit"'
+  g.fillText(title, x, eyebrow ? 250 : 170)
+  if (title2) g.fillText(title2, x, eyebrow ? 372 : 292)
+  const tex = canvasTex(c, false)
+  tex.colorSpace = THREE.NoColorSpace
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthTest: false, depthWrite: false,
+    uniforms: { map: { value: tex }, reveal: { value: 0 }, opacity: { value: 0 }, fromRight: { value: align === 'right' ? 1 : 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `varying vec2 vUv; uniform sampler2D map; uniform float reveal; uniform float opacity; uniform float fromRight;
+      void main(){
+        vec4 c = texture2D(map, vUv);
+        float x = mix(vUv.x, 1.0 - vUv.x, fromRight);
+        float m = smoothstep(reveal * 1.25 - 0.25, reveal * 1.25, x);
+        float a = c.a * (1.0 - m) * opacity;
+        gl_FragColor = vec4(c.rgb, a);
+      }`,
+  })
+  const w = 1.55, h = w * (ch / cw)
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat)
+  mesh.userData = { align, w, h }
+  captionScene.add(mesh)
+  return mesh
+}
+function animateCaption(cap, t, a, b) {
+  const inU = easeOutQuint(seg(t, a, a + 1.1)), outU = ease(seg(t, b - 0.55, b))
+  const o = inU * (1 - outU)
+  cap.visible = o > 0.001
+  if (!cap.visible) return
+  const { align, w, h } = cap.userData
+  const side = align === 'left' ? -1 : 1
+  const life = seg(t, a, b)
+  const x = side * (capVisW / 2 - w / 2 - 0.13) + side * -0.03 * life
+  cap.position.set(x, -capVisH / 2 + h / 2 + 0.11 + (1 - inU) * -0.04 + outU * 0.03, CAP_Z)
+  cap.rotation.set(0, -side * 7 * DEG, 0)
+  cap.material.uniforms.reveal.value = inU
+  cap.material.uniforms.opacity.value = o
+}
+
+// ───────────────────────────── build everything (async: textures + fonts) ─────────────────────────────
+const T = {}
+const world = new THREE.Group(); scene.add(world)
+const S = {} // named objects and computed anchors
+
+async function build() {
+  await document.fonts.load('600 104px "Outfit"'); await document.fonts.load('600 40px "DM Sans"'); await document.fonts.load('500 60px "Outfit"')
+  const names = ['plan-empty', 'plan-routes', 'form-empty', 'form-filled', 'route-card-0', 'route-card-1', 'route-card-2', 'hazard-dialog', 'logo-clear', 'phone-trip']
+  await Promise.all(names.map(async n => { T[n] = await loadTex(`assets/${n}.png`) }))
+  const routesJson = await (await fetch('assets/routes.json')).json()
+  const phRings = await (await fetch('assets/philippines.json')).json()
+  const phoneRect = await (await fetch('assets/phone-video-rect.json')).json()
+  const rawImg = await loadImg('assets/raw_severe_road_damage_01.jpg')
+  const detImg = await loadImg('assets/test_severe_road_damage_01.jpg')
+  const dialogImg = await loadImg('assets/hazard-dialog.png')
+
+  // terrain + vegetation
+  world.add(buildTerrain())
+  scene.add(buildRidges())
+  scatterVegetation(world)
+
+  buildFarmTable()
+  buildRoad()
+  buildTruck()
+  buildFarmer()
+  buildDriver()
+  buildMap(routesJson, phRings)
+  buildGuideLine()
+  buildPhone(phoneRect, rawImg, detImg)
+  buildDialog(dialogImg)
+  buildLogo()
+  buildCaptions()
+  buildDust()
+  buildCameraTracks()
+}
+
+// ───────────────────────────── farm table, tomatoes, laptop ─────────────────────────────
+function buildCrate(w, h, d, tomatoes, rnd) {
+  const g = new THREE.Group()
+  const slat = (sx, sy, sz, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), M.woodLight); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m) }
+  slat(w, 0.012, d, 0, 0.006, 0)
+  for (const yy of [0.04, 0.1, h - 0.03]) {
+    slat(w, 0.035, 0.012, 0, yy, d / 2); slat(w, 0.035, 0.012, 0, yy, -d / 2)
+    slat(0.012, 0.035, d, w / 2, yy, 0); slat(0.012, 0.035, d, -w / 2, yy, 0)
+  }
+  for (const [x, z] of [[w / 2, d / 2], [-w / 2, d / 2], [w / 2, -d / 2], [-w / 2, -d / 2]]) slat(0.025, h, 0.025, x, h / 2, z)
+  const sphere = new THREE.SphereGeometry(1, 28, 18)
+  const inst = new THREE.InstancedMesh(sphere, M.tomato, tomatoes)
+  const stemI = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.3, 0.25, 6), M.stem, tomatoes)
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion()
+  const cols = Math.round(Math.sqrt(tomatoes * w / d)), rows = Math.ceil(tomatoes / cols)
+  for (let i = 0; i < tomatoes; i++) {
+    const cx = i % cols, cz = Math.floor(i / cols)
+    const r = 0.034 + rnd() * 0.008
+    const x = -w / 2 + (cx + 0.5) * (w / cols) + (rnd() - 0.5) * 0.01
+    const z = -d / 2 + (cz + 0.5) * (d / rows) + (rnd() - 0.5) * 0.01
+    const y = h - 0.035 + (rnd() - 0.5) * 0.015
+    q.setFromEuler(new THREE.Euler(rnd(), rnd(), rnd()))
+    m4.compose(V3(x, y, z), q, V3(r, r * 0.86, r)); inst.setMatrixAt(i, m4)
+    m4.compose(V3(x, y + r * 0.86, z), new THREE.Quaternion(), V3(r * 0.5, r * 0.5, r * 0.5)); stemI.setMatrixAt(i, m4)
+  }
+  inst.castShadow = true
+  g.add(inst, stemI)
+  return g
+}
+function buildFarmTable() {
+  const rnd = mulberry32(3)
+  const table = new THREE.Group()
+  const top = new THREE.Mesh(new RoundedBoxGeometry(1.9, 0.05, 0.95, 3, 0.01), M.wood)
+  top.position.y = 0.735; top.castShadow = top.receiveShadow = true
+  table.add(top)
+  for (const [x, z] of [[0.86, 0.4], [-0.86, 0.4], [0.86, -0.4], [-0.86, -0.4]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.71, 0.06), M.wood); leg.position.set(x, 0.355, z); leg.castShadow = true; table.add(leg)
+  }
+  world.add(table)
+  const crate1 = buildCrate(0.42, 0.2, 0.3, 42, rnd); crate1.position.set(0.52, 0.76, 0.02); crate1.rotation.y = -0.18; world.add(crate1)
+  const crate2 = buildCrate(0.42, 0.2, 0.3, 42, rnd); crate2.position.set(0.66, 0.76, 0.34); crate2.rotation.y = 0.12; world.add(crate2)
+  const crate3 = buildCrate(0.5, 0.24, 0.36, 56, rnd); crate3.position.set(-0.05, 0, 1.85); crate3.rotation.y = 0.4; world.add(crate3)
+  const crate4 = buildCrate(0.5, 0.24, 0.36, 56, rnd); crate4.position.set(-0.02, 0.24, 1.83); crate4.rotation.y = 0.32; world.add(crate4)
+  S.crateFocus = V3(0.6, 0.95, 0.3)
+
+  // laptop
+  const laptop = new THREE.Group()
+  const base = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.014, 0.235, 4, 0.006), M.alu)
+  base.position.y = 0.007; base.castShadow = true; laptop.add(base)
+  const deck = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1), new THREE.MeshStandardMaterial({ color: '#1b1d20', roughness: 0.55 }))
+  deck.rotation.x = -Math.PI / 2; deck.position.set(0, 0.0142, -0.035); laptop.add(deck)
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.07), new THREE.MeshPhysicalMaterial({ color: '#b9bdc4', metalness: 0.9, roughness: 0.42 }))
+  pad.rotation.x = -Math.PI / 2; pad.position.set(0, 0.0142, 0.068); laptop.add(pad)
+  const hinge = new THREE.Group(); hinge.position.set(0, 0.014, -0.115); laptop.add(hinge)
+  const lidAngle = -18 * DEG
+  hinge.rotation.x = lidAngle
+  const lid = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.225, 0.007, 4, 0.006), M.alu)
+  lid.position.set(0, 0.1125, -0.0035); lid.castShadow = true; hinge.add(lid)
+  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(0.332, 0.217), M.blackGlass)
+  bezel.position.set(0, 0.1125, 0.0002); hinge.add(bezel)
+  const screenW = 0.32, screenH = 0.2
+  const screen = new THREE.Group(); screen.position.set(0, 0.1145, 0.0006); hinge.add(screen)
+  const scrA = new THREE.Mesh(new THREE.PlaneGeometry(screenW, screenH), new THREE.MeshBasicMaterial({ map: T['plan-empty'], color: new THREE.Color(0.93, 0.93, 0.93), toneMapped: true }))
+  const scrBMat = new THREE.MeshBasicMaterial({ map: T['plan-routes'], color: new THREE.Color(0.93, 0.93, 0.93), transparent: true, toneMapped: true })
+  scrBMat.onBeforeCompile = sh => {
+    sh.uniforms.reveal = { value: 0 }; scrBMat.userData.shader = sh
+    sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float reveal;\nvoid main() {')
+      .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+        float edge = 1.0 - reveal * 1.08;
+        diffuseColor.a *= smoothstep(edge, edge + 0.025, vMapUv.y);
+        diffuseColor.rgb += vec3(0.10, 0.16, 0.12) * (1.0 - smoothstep(0.0, 0.03, abs(vMapUv.y - edge - 0.0125))) * step(0.001, reveal) * step(reveal, 0.999);`)
+  }
+  const scrB = new THREE.Mesh(new THREE.PlaneGeometry(screenW, screenH), scrBMat)
+  scrB.position.z = 0.0002
+  screen.add(scrA, scrB)
+  laptop.position.set(-0.12, 0.76, 0.05)
+  laptop.rotation.y = 0.05
+  world.add(laptop)
+  laptop.updateMatrixWorld(true)
+  S.laptop = laptop; S.screen = screen; S.scrA = scrA; S.scrB = scrB; S.screenW = screenW; S.screenH = screenH
+  S.screenCenter = screen.getWorldPosition(V3())
+  S.screenNormal = V3(0, 0, 1).applyQuaternion(screen.getWorldQuaternion(new THREE.Quaternion()))
+
+  // delivery form card lifts off the screen
+  const formEmpty = makeGlassCard(T['form-empty'], 0.12, { radius: 0.05 })
+  const formFilled = makeGlassCard(T['form-filled'], 0.12, { radius: 0.05, glass: false, shadow: false })
+  formFilled.position.z = 0.0012
+  const formCard = new THREE.Group(); formCard.add(formEmpty, formFilled)
+  screen.add(formCard)
+  // wipe from empty to filled (top to bottom) on the filled face
+  const ff = formFilled.userData.face.material
+  ff.onBeforeCompile = sh => {
+    sh.uniforms.wipe = { value: 0 }; ff.userData.shader = sh
+    sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float wipe;\nvoid main() {')
+      .replace('#include <alphamap_fragment>', '#include <alphamap_fragment>\n diffuseColor.a *= smoothstep(1.0 - wipe * 1.1, 1.0 - wipe * 1.1 + 0.08, vMapUv.y);')
+  }
+  S.formCard = formCard; S.formEmpty = formEmpty; S.formFilled = formFilled
+  S.findFx = buttonFX(formFilled, 0.12, formFilled.userData.height, 0.5, 0.931, 0.12 * 0.853, formFilled.userData.height * 0.0655, 'Finding routes…', 0.0004)
+  // where the form sits inside the 1440 x 900 screenshot
+  const u = 198 / 1440, v = 535.5 / 900      // measured: the filled form's centre in the 1440 x 900 page
+  S.formOnScreen = V3((u - 0.5) * screenW, (0.5 - v) * screenH, 0.0008)
+  S.formOnScreenScale = ((340 / 1440) * screenW) / 0.12
+}
+
+// ───────────────────────────── road + emerald guide line ─────────────────────────────
+function asphaltTexture() {
+  const c = makeCanvas(512, 2048), g = c.getContext('2d'), rnd = mulberry32(11)
+  g.fillStyle = '#3b3d3f'; g.fillRect(0, 0, 512, 2048)
+  for (let i = 0; i < 26000; i++) { const v = 45 + rnd() * 40; g.fillStyle = `rgba(${v},${v},${v + 2},0.35)`; g.fillRect(rnd() * 512, rnd() * 2048, 2, 2) }
+  g.fillStyle = '#d9d6cc'; g.fillRect(18, 0, 10, 2048); g.fillRect(484, 0, 10, 2048)
+  g.fillStyle = '#e8d27a'; for (let y = 0; y < 2048; y += 256) g.fillRect(251, y, 10, 150)
+  g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(120, 0, 70, 2048); g.fillRect(322, 0, 70, 2048)
+  const t = canvasTex(c); t.wrapS = t.wrapT = THREE.RepeatWrapping
+  return t
+}
+function ribbon(curve, width, segments, y = 0.03, uRepeat = 1) {
+  const pos = [], uv = [], idx = []
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments, p = curve.getPointAt(u), tg = curve.getTangentAt(u)
+    const nx = -tg.z, nz = tg.x, l = Math.hypot(nx, nz)
+    pos.push(p.x + (nx / l) * width / 2, y, p.z + (nz / l) * width / 2, p.x - (nx / l) * width / 2, y, p.z - (nz / l) * width / 2)
+    uv.push(0, u * uRepeat, 1, u * uRepeat)
+    if (i < segments) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+  g.setIndex(idx); g.computeVertexNormals()
+  return g
+}
+function buildRoad() {
+  const tex = asphaltTexture()
+  const road = new THREE.Mesh(ribbon(roadCurve, 7.2, 900, ROAD_Y, ROAD_LEN / 14), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, polygonOffset: true, polygonOffsetFactor: -2 }))
+  road.receiveShadow = true
+  const shoulder = new THREE.Mesh(ribbon(roadCurve, 10.5, 900, ROAD_Y - 0.015, 1), new THREE.MeshStandardMaterial({ color: '#9b8461', roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 }))
+  shoulder.receiveShadow = true
+  world.add(shoulder, road)
+  const guideMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#2ee59d').multiplyScalar(3.2), transparent: true, opacity: 0, depthWrite: false, toneMapped: true, blending: THREE.AdditiveBlending })
+  const guide = new THREE.Mesh(ribbon(roadCurve, 0.34, 900, ROAD_Y + 0.02, 1), guideMat)
+  world.add(guide)
+  S.guide = guide
+}
+
+// ───────────────────────────── produce truck with interior ─────────────────────────────
+function buildTruck() {
+  const rnd = mulberry32(9)
+  const truck = new THREE.Group()
+  const add = (geo, mat, x, y, z, parent = truck) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m }
+  // chassis + bed
+  add(new RoundedBoxGeometry(1.78, 0.32, 4.9, 3, 0.05), M.interior, 0, 0.62, 0.35)
+  add(new RoundedBoxGeometry(1.84, 0.12, 2.75, 3, 0.03), M.paintGreen, 0, 0.84, -1.05)
+  add(new RoundedBoxGeometry(0.08, 0.5, 2.75, 3, 0.03), M.paintGreen, 0.88, 1.12, -1.05)
+  add(new RoundedBoxGeometry(0.08, 0.5, 2.75, 3, 0.03), M.paintGreen, -0.88, 1.12, -1.05)
+  add(new RoundedBoxGeometry(1.84, 0.5, 0.08, 3, 0.03), M.paintGreen, 0, 1.12, -2.4)
+  // tomato crates on the bed
+  for (let i = 0; i < 6; i++) {
+    const c = buildCrate(0.72, 0.26, 0.6, 50, rnd)
+    c.position.set(i % 2 ? -0.4 : 0.4, 0.9, -0.45 - Math.floor(i / 2) * 0.68)
+    truck.add(c)
+    if (i === 5) S.lastCrate = c   // the farmer loads this one in the opening shot
+  }
+  // cab shell (hollow so the camera can enter through the passenger window)
+  const cab = new THREE.Group(); truck.add(cab)
+  add(new RoundedBoxGeometry(1.84, 0.1, 1.55, 3, 0.04), M.paintCream, 0, 2.04, 1.0, cab) // roof
+  add(new RoundedBoxGeometry(1.84, 0.66, 0.1, 3, 0.04), M.paintCream, 0, 1.12, 0.25, cab) // back wall, below the rear window
+  add(new RoundedBoxGeometry(1.84, 0.13, 0.1, 3, 0.04), M.paintCream, 0, 1.985, 0.25, cab) // above the rear window
+  add(new RoundedBoxGeometry(0.22, 0.5, 0.1, 3, 0.03), M.paintCream, 0.81, 1.69, 0.25, cab) // rear window pillars
+  add(new RoundedBoxGeometry(0.22, 0.5, 0.1, 3, 0.03), M.paintCream, -0.81, 1.69, 0.25, cab)
+  const rearGlass = add(new THREE.PlaneGeometry(1.4, 0.48), M.windowGlass.clone(), 0, 1.69, 0.25, cab); rearGlass.castShadow = false
+  add(new RoundedBoxGeometry(0.08, 0.62, 1.5, 3, 0.03), M.paintCream, 0.9, 1.1, 1.0, cab) // driver door lower
+  const passengerDoor = add(new RoundedBoxGeometry(0.08, 0.62, 1.5, 3, 0.03), M.paintCream.clone(), -0.9, 1.1, 1.0, cab)
+  add(new THREE.BoxGeometry(0.07, 0.62, 0.08), M.paintCream, 0.9, 1.72, 0.3, cab) // B pillars
+  add(new THREE.BoxGeometry(0.07, 0.62, 0.08), M.paintCream, -0.9, 1.72, 0.3, cab)
+  const aL = add(new THREE.BoxGeometry(0.07, 0.72, 0.08), M.paintCream, 0.88, 1.68, 1.78, cab); aL.rotation.x = -0.42
+  const aR = add(new THREE.BoxGeometry(0.07, 0.72, 0.08), M.paintCream, -0.88, 1.68, 1.78, cab); aR.rotation.x = -0.42
+  add(new RoundedBoxGeometry(1.8, 0.16, 0.16, 3, 0.05), M.paintGreen, 0, 1.0, 1.0, cab).scale.z = 9.6 // accent stripe base
+  // hood + grille + lights
+  add(new RoundedBoxGeometry(1.8, 0.5, 1.0, 4, 0.08), M.paintCream, 0, 1.04, 2.25, cab)
+  add(new RoundedBoxGeometry(1.5, 0.28, 0.06, 3, 0.03), M.chrome, 0, 1.0, 2.77, cab)
+  const lamp = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff4d6').multiplyScalar(2.2) })
+  add(new RoundedBoxGeometry(0.26, 0.12, 0.04, 3, 0.02), lamp, 0.68, 1.12, 2.76, cab)
+  add(new RoundedBoxGeometry(0.26, 0.12, 0.04, 3, 0.02), lamp, -0.68, 1.12, 2.76, cab)
+  const tail = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff3b2f').multiplyScalar(1.6) })
+  add(new THREE.BoxGeometry(0.12, 0.2, 0.04), tail, 0.82, 1.0, -2.45)
+  add(new THREE.BoxGeometry(0.12, 0.2, 0.04), tail, -0.82, 1.0, -2.45)
+  // glass
+  const ws = add(new THREE.PlaneGeometry(1.74, 0.78), M.windowGlass, 0, 1.68, 1.8, cab); ws.rotation.x = Math.PI - 0.42; ws.rotation.y = Math.PI; ws.castShadow = false
+  const wl = add(new THREE.PlaneGeometry(1.4, 0.55), M.windowGlass, 0.9, 1.7, 1.0, cab); wl.rotation.y = Math.PI / 2; wl.castShadow = false
+  const wr = add(new THREE.PlaneGeometry(1.4, 0.55), M.windowGlass.clone(), -0.9, 1.7, 1.0, cab); wr.rotation.y = -Math.PI / 2; wr.castShadow = false
+  // interior: dashboard, wheel, seats
+  add(new RoundedBoxGeometry(1.72, 0.24, 0.5, 4, 0.06), M.interior, 0, 1.2, 1.6, cab)
+  add(new RoundedBoxGeometry(1.6, 0.06, 0.3, 3, 0.02), M.interiorLight, 0, 1.33, 1.48, cab)
+  const wheel = add(new THREE.TorusGeometry(0.18, 0.022, 12, 40), M.rubber, 0.42, 1.36, 1.28, cab); wheel.rotation.x = -0.35
+  add(new RoundedBoxGeometry(0.55, 0.6, 0.18, 4, 0.06), M.interiorLight, 0.42, 1.25, 0.42, cab)
+  add(new RoundedBoxGeometry(0.55, 0.6, 0.18, 4, 0.06), M.interiorLight, -0.42, 1.25, 0.42, cab)
+  add(new RoundedBoxGeometry(0.55, 0.12, 0.5, 4, 0.05), M.interiorLight, 0.42, 1.0, 0.68, cab)   // seat cushions
+  add(new RoundedBoxGeometry(0.55, 0.12, 0.5, 4, 0.05), M.interiorLight, -0.42, 1.0, 0.68, cab)
+  const cabLight = new THREE.PointLight('#ffe6c4', 1.4, 2.2, 1.5); cabLight.position.set(-0.2, 1.8, 1.0); cab.add(cabLight)
+  // wheels
+  const wheels = []
+  for (const [x, z] of [[0.86, 2.0], [-0.86, 2.0], [0.86, -1.5], [-0.86, -1.5]]) {
+    const w = new THREE.Group(); w.position.set(x, 0.4, z)
+    const tyre = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 32), M.rubber); tyre.rotation.z = Math.PI / 2; tyre.castShadow = true
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.31, 20), M.chrome); hub.rotation.z = Math.PI / 2
+    w.add(tyre, hub); truck.add(w); wheels.push(w)
+  }
+  world.add(truck)
+  S.truck = truck; S.wheels = wheels; S.passengerDoor = passengerDoor; S.passengerGlass = wr; S.rearGlass = rearGlass
+}
+
+// ───────────────────────────── the farmer (opening shot) ─────────────────────────────
+const PARK = { pos: V3(4.2, 0, -1.4), rotY: Math.PI / 2 }      // the pickup, parked beside the farm table
+const FARMER_PATH = { start: V3(0.35, 0, 1.55), atTruck: V3(2.3, 0, 0.08), back: V3(2.25, 0, 0.5) }
+function buildFarmer() {
+  const g = new THREE.Group()
+  const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 })
+  const skin = mat('#9a6a48'), shirt = mat('#5a7795'), pants = mat('#3c3a35'), straw = new THREE.MeshStandardMaterial({ color: '#d7b46b', roughness: 0.92 })
+  const part = (geo, m, x, y, z, parent = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; parent.add(o); return o }
+  const legs = [-1, 1].map(s => {
+    const hip = new THREE.Group(); hip.position.set(s * 0.1, 0.92, 0); g.add(hip)
+    part(new THREE.CapsuleGeometry(0.075, 0.68, 6, 12), pants, 0, -0.42, 0, hip)
+    part(new RoundedBoxGeometry(0.12, 0.07, 0.26, 2, 0.03), mat('#2b2622'), 0, -0.88, 0.05, hip)
+    return hip
+  })
+  const torso = new THREE.Group(); torso.position.y = 0.92; g.add(torso)
+  part(new THREE.CapsuleGeometry(0.16, 0.33, 6, 16), shirt, 0, 0.3, 0, torso).scale.set(1.05, 1, 0.7)
+  part(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 12), skin, 0, 0.58, 0, torso)
+  part(new THREE.SphereGeometry(0.1, 24, 16), skin, 0, 0.69, 0.01, torso)
+  part(new THREE.ConeGeometry(0.31, 0.14, 40), straw, 0, 0.82, 0, torso)          // salakot hat
+  part(new THREE.SphereGeometry(0.025, 10, 8), straw, 0, 0.9, 0, torso)
+  const arms = [-1, 1].map(s => {
+    const sh = new THREE.Group(); sh.position.set(s * 0.2, 0.48, 0); torso.add(sh)
+    part(new THREE.CapsuleGeometry(0.052, 0.5, 6, 12), shirt, 0, -0.3, 0, sh)
+    part(new THREE.SphereGeometry(0.05, 12, 10), skin, 0, -0.6, 0, sh)
+    return sh
+  })
+  g.position.copy(FARMER_PATH.start)
+  world.add(g)
+  const carried = buildCrate(0.72, 0.26, 0.6, 50, mulberry32(21))
+  world.add(carried)
+  S.farmer = { g, legs, arms, torso, carried }
+}
+function buildDriver() {
+  // the same farmer, seated at the wheel (left-hand drive), as a child of the truck
+  const g = new THREE.Group()
+  const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 })
+  const skin = mat('#9a6a48'), shirt = mat('#5a7795'), pants = mat('#3c3a35'), straw = new THREE.MeshStandardMaterial({ color: '#d7b46b', roughness: 0.92 })
+  const part = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o }
+  const X = 0.42
+  for (const s of [-1, 1]) {
+    part(new THREE.CapsuleGeometry(0.075, 0.34, 6, 12), pants, X + s * 0.1, 1.14, 0.86).rotation.x = Math.PI / 2   // thighs
+    part(new THREE.CapsuleGeometry(0.068, 0.36, 6, 12), pants, X + s * 0.1, 0.9, 1.07)                             // shins
+  }
+  const torso = part(new THREE.CapsuleGeometry(0.16, 0.33, 6, 16), shirt, X, 1.44, 0.6); torso.scale.set(1.05, 1, 0.7); torso.rotation.x = -0.12
+  part(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 12), skin, X, 1.72, 0.57)
+  part(new THREE.SphereGeometry(0.1, 24, 16), skin, X, 1.82, 0.58)
+  part(new THREE.ConeGeometry(0.29, 0.13, 40), straw, X, 1.93, 0.57)   // salakot
+  // arms reaching to the wheel
+  const wheelGrip = [V3(X - 0.15, 1.39, 1.2), V3(X + 0.15, 1.39, 1.2)]
+  ;[-1, 1].forEach((s, i) => {
+    const shoulder = V3(X + s * 0.19, 1.62, 0.6), hand = wheelGrip[i]
+    const dir = hand.clone().sub(shoulder), len = dir.length()
+    const arm = part(new THREE.CapsuleGeometry(0.05, len - 0.1, 6, 12), shirt, 0, 0, 0)
+    arm.position.copy(shoulder).add(hand).multiplyScalar(0.5)
+    arm.quaternion.setFromUnitVectors(V3(0, 1, 0), dir.normalize())
+    part(new THREE.SphereGeometry(0.048, 12, 10), skin, hand.x, hand.y, hand.z)
+  })
+  S.truck.add(g)
+  S.driver = g
+}
+function animateFarmer(t) {
+  // he loads the truck on the farm, then he is the one driving it
+  S.farmer.g.visible = t < 16.5
+  S.driver.visible = t >= 16.5
+  const F = S.farmer, P = FARMER_PATH
+  const walkU = ease(seg(t, -4.0, -2.0))
+  const yawWalk = Math.atan2(P.atTruck.x - P.start.x, P.atTruck.z - P.start.z)
+  let pos = P.start.clone().lerp(P.atTruck, walkU), yaw = yawWalk
+  yaw = lerp(yaw, Math.PI, ease(seg(t, -2.0, -1.55)))                        // turn to face the truck
+  const backU = ease(seg(t, -0.55, 0.45))
+  pos.lerp(P.back, backU)                                                     // step back after loading
+  yaw = lerp(yaw, -2.55, ease(seg(t, 0.3, 1.5)))                              // turn towards the table
+  const stride = P.start.distanceTo(P.atTruck) * walkU + backU * 0.42
+  const walking = (t > -4.0 && t < -2.0) || (t > -0.55 && t < 0.45)
+  const phase = stride / 0.62 * Math.PI
+  F.g.position.copy(pos); F.g.position.y = Math.abs(Math.sin(phase)) * 0.025 * (walking ? 1 : 0)
+  F.g.rotation.y = yaw
+  F.legs.forEach((leg, i) => { leg.rotation.x = (walking ? Math.sin(phase + i * Math.PI) * 0.42 : 0) })
+  F.torso.rotation.x = 0.06 + 0.22 * pulse(t, -1.6, -0.5)                    // lean in while lifting
+  // arms: carrying (forward), lifting (up and out), then relaxed by the side
+  const lift = seg(t, -1.6, -0.6), rest = ease(seg(t, -0.6, 0.2))
+  const carryA = -0.78, liftA = lerp(carryA, -1.35, Math.sin(Math.PI * Math.min(1, lift * 1.15)) * 0.6 + lift * 0.5)
+  F.arms.forEach((arm, i) => { arm.rotation.x = lerp(lift > 0 ? liftA : carryA, 0.05, rest); arm.rotation.z = (i ? -1 : 1) * 0.08 })
+  // the crate: in his hands, then lifted onto the bed, where the truck's own crate takes over
+  F.g.updateMatrixWorld(true)
+  const inHands = F.g.localToWorld(V3(0, 0.98, 0.4))
+  const handQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0))
+  S.truck.updateMatrixWorld(true)
+  const slot = S.lastCrate.getWorldPosition(V3()), slotQ = S.lastCrate.getWorldQuaternion(new THREE.Quaternion())
+  const e = ease(lift)
+  const crate = F.carried
+  crate.visible = t < -0.6
+  S.lastCrate.visible = t >= -0.6
+  if (crate.visible) {
+    // the crate's origin is its base; centre it on the hands while carrying
+    const carryPos = inHands.clone().add(V3(0, -0.13, 0))
+    crate.position.copy(carryPos).lerp(slot, e).add(V3(0, 0.42 * Math.sin(Math.PI * e), 0))
+    crate.quaternion.copy(handQ).slerp(slotQ, e)
+  }
+}
+
+// ───────────────────────────── 3D relief map of Luzon with the real routes ─────────────────────────────
+const MAP = { lon0: 121.0, lat0: 15.35, k: 0.5, pos: V3(0.3, 2.2, -13) }
+const cosLat = Math.cos(MAP.lat0 * DEG)
+const geoX = lon => (lon - MAP.lon0) * MAP.k * cosLat
+const geoZ = lat => -(lat - MAP.lat0) * MAP.k
+function reliefAt(lon, lat) {
+  const g = (x, c, w) => Math.exp(-(((x - c) / w) ** 2))
+  const band = (lat, a, b) => smooth(a - 0.35, a + 0.15, lat) * (1 - smooth(b - 0.15, b + 0.35, lat))
+  let h = 0
+  h += 0.62 * g(lon, 120.95 + (lat - 17) * 0.06, 0.42) * band(lat, 15.9, 18.4)      // Cordillera
+  h += 0.55 * g(lon, 121.45 + (lat - 14.5) * 0.19, 0.27) * band(lat, 14.6, 18.2)   // Sierra Madre
+  h += 0.55 * g(lon, 120.15, 0.17) * band(lat, 14.6, 16.2)                          // Zambales
+  h += 0.55 * g(lon, 121.05, 0.3) * g(lat, 16.05, 0.25)                             // Caraballo
+  h += 0.7 * g(lon, 123.68, 0.07) * g(lat, 13.26, 0.07)                             // Mayon
+  h += 0.35 * g(lon, 121.45, 0.1) * g(lat, 14.07, 0.1)                              // Banahaw
+  h += 0.45 * g(lon, 120.5, 0.12) * g(lat, 15.14, 0.12)                             // Pinatubo
+  h += 0.28 * (fbm(lon * 2.2, lat * 2.2, 4, 9) * 0.5 + 0.5)
+  h *= 0.65 + 0.55 * (fbm(lon * 6, lat * 6, 3, 4) * 0.5 + 0.5)
+  return h * 0.105
+}
+function buildMap(routesJson, rings) {
+  const map = new THREE.Group(); map.position.copy(MAP.pos)
+  const inner = new THREE.Group(); map.add(inner) // inner scaled for the morph
+  const bounds = { lonA: 119.3, lonB: 124.7, latA: 11.3, latB: 18.9 }
+  const mw = geoX(bounds.lonB) - geoX(bounds.lonA), mh = geoZ(bounds.latA) - geoZ(bounds.latB)
+  // land mask
+  const cw = 2048, ch = Math.round(2048 * mh / mw), c = makeCanvas(cw, ch), g = c.getContext('2d')
+  g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch); g.fillStyle = '#fff'
+  const px = lon => ((lon - bounds.lonA) / (bounds.lonB - bounds.lonA)) * cw
+  const py = lat => ((bounds.latB - lat) / (bounds.latB - bounds.latA)) * ch
+  for (const ring of rings) { g.beginPath(); ring.forEach(([lo, la], i) => (i ? g.lineTo(px(lo), py(la)) : g.moveTo(px(lo), py(la)))); g.closePath(); g.fill() }
+  const mask = canvasTex(c, false)
+  // relief grid
+  const seX = 520, seZ = Math.round(520 * mh / mw)
+  const geo = new THREE.PlaneGeometry(mw, mh, seX, seZ); geo.rotateX(-Math.PI / 2)
+  geo.translate(geoX(bounds.lonA) + mw / 2, 0, geoZ(bounds.latB) + mh / 2)
+  const p = geo.attributes.position, col = new Float32Array(p.count * 3)
+  const cLow = new THREE.Color('#5fa865'), cMid = new THREE.Color('#2f7d4c'), cHigh = new THREE.Color('#1f5e3d'), cPeak = new THREE.Color('#6f8f5e'), tmp = new THREE.Color()
+  for (let i = 0; i < p.count; i++) {
+    const lon = MAP.lon0 + p.getX(i) / (MAP.k * cosLat), lat = MAP.lat0 - p.getZ(i) / MAP.k
+    const h = reliefAt(lon, lat)
+    p.setY(i, 0.002 + h)
+    const n = h / 0.105
+    if (n < 0.35) tmp.copy(cLow).lerp(cMid, n / 0.35)
+    else if (n < 0.75) tmp.copy(cMid).lerp(cHigh, (n - 0.35) / 0.4)
+    else tmp.copy(cHigh).lerp(cPeak, clamp((n - 0.75) / 0.35))
+    col.set([tmp.r, tmp.g, tmp.b], i * 3)
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals()
+  const landMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, alphaMap: mask, alphaTest: 0.5, side: THREE.DoubleSide, transparent: false })
+  const land = new THREE.Mesh(geo, landMat); land.castShadow = land.receiveShadow = true
+  const reliefGroup = new THREE.Group(); reliefGroup.add(land); inner.add(reliefGroup)
+  // coast walls
+  const shapes = rings.map(r => new THREE.Shape(r.map(([lo, la]) => new THREE.Vector2(geoX(lo), -geoZ(la)))))
+  const wallGeo = new THREE.ExtrudeGeometry(shapes, { depth: 0.045, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.003, bevelSegments: 2, curveSegments: 2 })
+  wallGeo.rotateX(-Math.PI / 2); wallGeo.translate(0, -0.047, 0)
+  const walls = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: '#4c6b45', roughness: 0.7 }))
+  walls.castShadow = true
+  inner.add(walls)
+  // glossy sea disc + gold grid + rim
+  const seaFade = (() => { const cc = makeCanvas(512, 512), gg = cc.getContext('2d'); const gr = gg.createRadialGradient(256, 256, 120, 256, 256, 256); gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#000'); gg.fillStyle = gr; gg.fillRect(0, 0, 512, 512); return canvasTex(cc, false) })()
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(2.6, 96), new THREE.MeshPhysicalMaterial({ color: '#0e3a36', roughness: 0.18, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, alphaMap: seaFade, depthWrite: false }))
+  sea.rotation.x = -Math.PI / 2; sea.position.set(0.15, -0.03, 0.2); sea.receiveShadow = true
+  const gridC = makeCanvas(1024, 1024), gg = gridC.getContext('2d')
+  gg.strokeStyle = 'rgba(246,212,140,0.55)'; gg.lineWidth = 1.5
+  for (let i = 0; i <= 1024; i += 32) { gg.beginPath(); gg.moveTo(i, 0); gg.lineTo(i, 1024); gg.stroke(); gg.beginPath(); gg.moveTo(0, i); gg.lineTo(1024, i); gg.stroke() }
+  const grid = new THREE.Mesh(new THREE.CircleGeometry(2.6, 96), new THREE.MeshBasicMaterial({ map: canvasTex(gridC), alphaMap: seaFade, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }))
+  grid.rotation.x = -Math.PI / 2; grid.position.set(0.15, -0.028, 0.2)
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(2.62, 0.004, 8, 200), new THREE.MeshBasicMaterial({ color: new THREE.Color('#f6d48c').multiplyScalar(1.6), transparent: true, opacity: 0.55 }))
+  rim.rotation.x = -Math.PI / 2; rim.position.set(0.15, -0.028, 0.2)
+  inner.add(sea, grid, rim)
+  scene.add(map)
+
+  // routes (real OSRM geometry from the AniRoute backend)
+  const routeColors = { optimal: '#19d38a', fastest: '#ff9a2e', safer: '#4d8dff' }
+  S.routes = {}
+  for (const r of routesJson.routes) {
+    const key = r.option?.key; if (!key) continue
+    const coords = r.geometry.coordinates
+    const pts = []; let last = null
+    for (const [lo, la] of coords) {
+      const v = V3(geoX(lo), 0, geoZ(la))
+      if (last && v.distanceTo(last) < 0.0035) continue
+      v.y = 0.002 + reliefAt(lo, la) + 0.005
+      pts.push(v); last = v
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal')
+    const segs = Math.min(1600, pts.length * 3)
+    const core = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, 0.0038, 8, false), new THREE.MeshBasicMaterial({ color: new THREE.Color(routeColors[key]).multiplyScalar(1.35), toneMapped: true }))
+    const halo = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, 0.011, 8, false), new THREE.MeshBasicMaterial({ color: new THREE.Color(routeColors[key]), transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false }))
+    const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: new THREE.Color(routeColors[key]).multiplyScalar(2.2), blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }))
+    head.scale.setScalar(0.045)
+    inner.add(core, halo, head)
+    S.routes[key] = { curve, core, halo, head, segs, color: new THREE.Color(routeColors[key]), baseColor: new THREE.Color(routeColors[key]).multiplyScalar(1.35) }
+  }
+  // pins
+  const pin = (color, label) => {
+    const gp = new THREE.Group()
+    const mat = new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, clearcoat: 1, metalness: 0.1 })
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.022, 32, 16), mat); head.position.y = 0.075
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.0145, 0.06, 24), mat); cone.rotation.x = Math.PI; cone.position.y = 0.045
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0085, 16, 12), new THREE.MeshBasicMaterial({ color: '#ffffff' })); dot.position.set(0, 0.075, 0.018)
+    head.castShadow = cone.castShadow = true
+    gp.add(head, cone, dot)
+    if (label) {
+      const lc = makeCanvas(640, 160), lg = lc.getContext('2d')
+      lg.fillStyle = 'rgba(12,40,28,0.92)'; lg.beginPath(); lg.roundRect(8, 24, 624, 112, 56); lg.fill()
+      lg.font = '600 58px "Outfit"'; lg.fillStyle = '#ffffff'; lg.textAlign = 'center'; lg.textBaseline = 'middle'; lg.fillText(label, 320, 82)
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(lc), transparent: true, depthWrite: false }))
+      sp.scale.set(0.2, 0.05, 1); sp.position.y = 0.14
+      gp.add(sp); gp.userData.label = sp
+    }
+    return gp
+  }
+  const first = S.routes.optimal.curve
+  S.pinA = pin('#0f5132', 'Baguio City'); S.pinA.position.copy(first.getPointAt(0)).add(V3(0, 0.004, 0))
+  S.pinB = pin('#0f5132', 'Calamba'); S.pinB.position.copy(first.getPointAt(1)).add(V3(0, 0.004, 0))
+  S.pinH = pin('#e5484d', 'Road damage confirmed')
+  inner.add(S.pinA, S.pinB, S.pinH)
+  // hazard point: on the recommended road where the safest road runs far away from it
+  const safePts = S.routes.safer.curve.getSpacedPoints(400)
+  let bestU = 0.55, bestD = -1
+  for (let u = 0.3; u <= 0.8; u += 0.005) {
+    const q = first.getPointAt(u); let dmin = 1e9
+    for (const s of safePts) dmin = Math.min(dmin, s.distanceTo(q))
+    if (dmin > bestD) { bestD = dmin; bestU = u }
+  }
+  S.hazardU = bestU
+  S.pinH.position.copy(first.getPointAt(bestU)).add(V3(0, 0.004, 0))
+  const ripple = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff5a5f').multiplyScalar(2), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }))
+  ripple.rotation.x = -Math.PI / 2; ripple.position.copy(S.pinH.position).add(V3(0, 0.002, 0))
+  inner.add(ripple); S.hazardRipple = ripple
+
+  // route cards (real UI) floating beside the map
+  S.routeCards = ['route-card-0', 'route-card-1', 'route-card-2'].map(n => { const card = makeGlassCard(T[n], 0.44, { radius: 0.05 }); scene.add(card); return card })
+  // each card belongs to one road: Recommended, Fastest alternative, Safest alternative (UI order)
+  S.cardRoute = ['optimal', 'fastest', 'safer']
+  S.cardU = S.cardRoute.map(key => {
+    const others = S.cardRoute.filter(k => k !== key).map(k => S.routes[k].curve.getSpacedPoints(300))
+    let best = 0.5, bestD = -1
+    for (let u = 0.3; u <= 0.8; u += 0.01) {
+      const q = S.routes[key].curve.getPointAt(u)
+      let dmin = 1e9
+      for (const pts of others) for (const s of pts) dmin = Math.min(dmin, s.distanceTo(q))
+      if (dmin > bestD) { bestD = dmin; best = u }
+    }
+    return best
+  })
+  const order = [0, 1, 2].sort((a, b) => S.routes[S.cardRoute[a]].curve.getPointAt(S.cardU[a]).x - S.routes[S.cardRoute[b]].curve.getPointAt(S.cardU[b]).x)
+  S.cardSide = [0, 0, 0]; S.cardH = [0, 0, 0]
+  order.forEach((idx, rank) => { S.cardSide[idx] = [-0.27, 0, 0.27][rank]; S.cardH[idx] = [0.34, 0.6, 0.34][rank] })
+  S.cardLeaders = S.cardRoute.map(key => {
+    const col = S.routes[key].color
+    const line = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 1, 8), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(1.2), transparent: true, opacity: 0, depthWrite: false }))
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: col.clone().multiplyScalar(2), transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }))
+    dot.scale.setScalar(0.05)
+    scene.add(line, dot)
+    return { line, dot }
+  })
+  S.map = map; S.mapInner = inner; S.relief = reliefGroup; S.mapWalls = walls; S.mapDecor = [sea, grid, rim]
+  map.updateMatrixWorld(true)
+  const toWorld = v => v.clone().applyMatrix4(inner.matrixWorld)
+  S.routeCenterWorld = () => toWorld(S.routes.optimal.curve.getPointAt(0.5)).lerp(toWorld(S.routes.safer.curve.getPointAt(0.5)), 0.5)
+  S.routePointWorld = (key, u) => S.routes[key].curve.getPointAt(clamp(u)).clone().applyMatrix4(inner.matrixWorld)
+}
+
+// ───────────────────────────── dashboard phone with the real trip screen ─────────────────────────────
+function buildPhone(rect, rawImg, detImg) {
+  const truck = S.truck
+  const phone = new THREE.Group()
+  const body = new THREE.Mesh(new RoundedBoxGeometry(0.076, 0.158, 0.0085, 6, 0.0095), new THREE.MeshPhysicalMaterial({ color: '#1a1c1f', metalness: 0.9, roughness: 0.28, clearcoat: 1 }))
+  const glass = new THREE.Mesh(new RoundedBoxGeometry(0.0735, 0.1555, 0.001, 6, 0.0088), M.blackGlass)
+  glass.position.z = 0.0043
+  phone.add(body, glass)
+  // screen textures: video region shows the raw frame, then the detector's annotated frame
+  const base = T['phone-trip'].image
+  const compose = img => {
+    const c = makeCanvas(base.width, base.height), g = c.getContext('2d')
+    g.drawImage(base, 0, 0)
+    if (rect.video && img) {
+      const s = rect.scale, v = rect.video, side = v.height
+      g.drawImage(img, (v.x + (v.width - side) / 2) * s, v.y * s, side * s, side * s)
+    }
+    return canvasTex(c)
+  }
+  const sw = 0.0695, sh = sw * (base.height / base.width)
+  const mk = (tex, z, op) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.93, 0.93, 0.93), transparent: true, opacity: op, alphaMap: roundedMask(256, Math.round(256 * sh / sw), 22), toneMapped: true })); m.position.z = z; phone.add(m); return m }
+  S.phoneRaw = mk(compose(rawImg), 0.0049, 1)
+  S.phoneDet = mk(compose(detImg), 0.0050, 0)
+  // detection flash ring over the box region
+  const v = rect.video, s = rect.scale, side = v.height
+  const bx = ((v.x + (v.width - side) / 2) + side * 0.3) / (base.width / s), by = (v.y + side * 0.82) / (base.height / s)
+  const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: new THREE.Color('#ff4b3e').multiplyScalar(2), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+  flash.position.set((bx - 0.5) * sw, (0.5 - by) * sh, 0.0055); flash.scale.setScalar(0.05)
+  phone.add(flash); S.phoneFlash = flash
+  // mount
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.07, 12), M.rubber); arm.rotation.x = Math.PI / 2; arm.position.set(0, -0.03, -0.035)
+  const clamp1 = new THREE.Mesh(new RoundedBoxGeometry(0.084, 0.012, 0.014, 3, 0.004), M.rubber); clamp1.position.set(0, -0.082, 0)
+  const clamp2 = clamp1.clone(); clamp2.position.y = 0.082
+  phone.add(arm, clamp1, clamp2)
+  phone.position.set(-0.13, 1.42, 1.46)
+  phone.rotation.set(-12 * DEG, Math.PI + 8 * DEG, 0)
+  truck.add(phone)
+  S.phone = phone
+}
+function buildDialog(img) {
+  // hide the headless-browser-only "No microphone was found" line (a real phone has a microphone)
+  const c = makeCanvas(img.width, img.height), g = c.getContext('2d')
+  g.drawImage(img, 0, 0)
+  g.fillStyle = '#ffffff'; g.fillRect(530, 545, 900, 48)
+  const tex = canvasTex(c)
+  const card = makeGlassCard(tex, 0.175, { radius: 0.04 })
+  S.truck.add(card)
+  S.dialog = card
+  // "Confirm & upload": press, ripple, light up, then the light carries into the map
+  const w = card.userData.width, h = card.userData.height
+  S.confirmFx = buttonFX(card, w, h, 0.8155, 0.8825, w * 0.317, h * 0.121, '✓  Confirmed', 0.0006)
+}
+
+// ───────────────────────────── button press → light up ─────────────────────────────
+function buttonFX(parent, w, h, cx, cy, bw, bh, label, z) {
+  const g = new THREE.Group(); g.position.set((cx - 0.5) * w, (0.5 - cy) * h, z); parent.add(g)
+  const cw = 1024, ch = Math.max(64, Math.round(1024 * bh / bw))
+  const c = makeCanvas(cw, ch), x = c.getContext('2d')
+  const grad = x.createLinearGradient(0, 0, 0, ch); grad.addColorStop(0, '#2fd38a'); grad.addColorStop(1, '#10a865')
+  x.fillStyle = grad; x.beginPath(); x.roundRect(2, 2, cw - 4, ch - 4, ch * 0.24); x.fill()
+  x.fillStyle = '#ffffff'; x.font = `600 ${Math.round(ch * 0.42)}px "DM Sans"`; x.textAlign = 'center'; x.textBaseline = 'middle'
+  x.fillText(label, cw / 2, ch / 2 + ch * 0.02)
+  const lit = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: canvasTex(c), transparent: true, opacity: 0, depthWrite: false }))
+  lit.position.z = 0.0002
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: new THREE.Color('#5dffb0').multiplyScalar(1.5), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }))
+  glow.userData.base = [bw * 1.55, bh * 3.4]
+  const dim = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ color: '#000000', alphaMap: roundedMask(256, Math.max(16, Math.round(256 * bh / bw)), 256 * bh / bw * 0.24), transparent: true, opacity: 0, depthWrite: false }))
+  dim.position.z = 0.0001
+  const sc = makeCanvas(128, 16), sx = sc.getContext('2d'), sg = sx.createLinearGradient(0, 0, 128, 0)
+  sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,255,255,1)'); sg.addColorStop(1, 'rgba(255,255,255,0)')
+  sx.fillStyle = sg; sx.fillRect(0, 0, 128, 16)
+  const shine = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.16, bh * 0.92), new THREE.MeshBasicMaterial({ map: canvasTex(sc), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }))
+  shine.position.z = 0.0003
+  const rings = [0, 1].map(() => {
+    const r = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color('#c8ffe4').multiplyScalar(1.6), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }))
+    r.position.z = 0.0004; g.add(r); return r
+  })
+  const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: new THREE.Color('#e4ffef').multiplyScalar(2.6), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }))
+  flash.position.z = 0.0006
+  g.add(glow, dim, lit, shine, flash)
+  return { g, lit, glow, dim, shine, rings, flash, bw, bh }
+}
+// tap: the moment of the press. release: when the button returns to its normal look (Infinity = stays lit).
+// flashAt: optional time at which the light blooms out (used to carry into the next shot).
+function animateButtonFX(fx, t, tap, release = Infinity, flashAt = null) {
+  const on = smooth(tap + 0.03, tap + 0.16, t) * (1 - smooth(release, release + 0.28, t))
+  fx.dim.material.opacity = pulse(t, tap - 0.07, tap + 0.13) * 0.3
+  fx.lit.material.opacity = on
+  fx.lit.scale.setScalar(lerp(0.93, 1, easeOutBack(seg(t, tap + 0.03, tap + 0.34), 2.2)))
+  const flare = pulse(t, tap + 0.06, tap + 0.95)
+  fx.lit.material.color.setScalar(1 + 0.6 * flare)
+  fx.glow.material.opacity = on * (0.3 + 0.7 * flare)
+  fx.glow.scale.set(fx.glow.userData.base[0] * (1 + 0.22 * flare), fx.glow.userData.base[1] * (1 + 0.22 * flare), 1)
+  fx.glow.visible = fx.glow.material.opacity > 0.002
+  const su = seg(t, tap + 0.2, tap + 0.75)
+  fx.shine.position.x = lerp(-0.42, 0.42, ease(su)) * fx.bw
+  fx.shine.material.opacity = Math.sin(Math.PI * su) * on * 0.85
+  fx.rings.forEach((r, i) => {
+    const u = seg(t, tap + i * 0.13, tap + 0.8 + i * 0.13)
+    r.material.opacity = u > 0 && u < 1 ? Math.pow(1 - u, 1.4) * 0.85 : 0
+    r.scale.setScalar(fx.bw * lerp(0.12, 0.72, easeOut(u)))
+    r.visible = r.material.opacity > 0.002
+  })
+  if (flashAt !== null) {
+    const fu = seg(t, flashAt, flashAt + 0.75)
+    fx.flash.material.opacity = Math.sin(Math.PI * Math.min(1, fu * 1.4)) * (fu > 0 ? 0.95 : 0)
+    fx.flash.scale.setScalar(fx.bw * lerp(0.4, 3.2, easeOut(fu)))
+  }
+  fx.g.visible = t > tap - 0.1
+}
+
+// ───────────────────────────── logo finale ─────────────────────────────
+function buildLogo() {
+  const g = new THREE.Group()
+  const panelW = 1.5, panelH = 0.66
+  const panel = new THREE.Mesh(new RoundedBoxGeometry(panelW, panelH, 0.035, 6, 0.05), new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.32, transmission: 1, thickness: 0.12, ior: 1.4, clearcoat: 1, clearcoatRoughness: 0.08, transparent: true }))
+  const tint = new THREE.Mesh(new THREE.PlaneGeometry(panelW * 0.985, panelH * 0.97), new THREE.MeshBasicMaterial({ color: '#fbf8f0', transparent: true, opacity: 0.82, alphaMap: roundedMask(512, 225, 34), depthWrite: false }))
+  tint.position.z = 0.019
+  const logoTex = T['logo-clear'], la = logoTex.image.height / logoTex.image.width
+  const lw = 1.08
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(lw, lw * la), new THREE.MeshBasicMaterial({ map: logoTex, transparent: true, depthWrite: false }))
+  logo.position.set(0, 0.08, 0.021)
+  const tc = makeCanvas(2048, 200), tg = tc.getContext('2d')
+  tg.font = '500 84px "Outfit"'; tg.fillStyle = '#1f5b3f'; tg.textAlign = 'center'; tg.textBaseline = 'middle'; tg.letterSpacing = '1px'
+  tg.fillText('Protect the harvest on the way to market.', 1024, 100)
+  const tagline = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2 * 200 / 2048), new THREE.MeshBasicMaterial({ map: canvasTex(tc), transparent: true, depthWrite: false, opacity: 0 }))
+  tagline.position.set(0, -0.2, 0.021)
+  // light sweep
+  const sweep = new THREE.Mesh(new THREE.PlaneGeometry(0.28, panelH * 1.6), new THREE.MeshBasicMaterial({ map: glowSprite, color: new THREE.Color('#fff2d4').multiplyScalar(0.9), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+  sweep.rotation.z = -0.35; sweep.position.z = 0.023
+  g.add(panel, tint, logo, tagline, sweep)
+  const pos = MAP.pos.clone().add(V3(0.0, 1.32, 0.55))
+  g.position.copy(pos)
+  scene.add(g)
+  S.logo = { g, panel, tint, logo, tagline, sweep, panelW, panelH }
+  // ribbons rising from the map into the logo mark
+  const markLocal = V3(-0.47, 0.11, 0.03)
+  const target = markLocal.clone().add(pos)
+  S.finaleRibbons = ['optimal', 'fastest', 'safer'].map((key, i) => {
+    const start = S.routePointWorld(key, 0.35 + i * 0.12)
+    const side = (i - 1) * 0.45
+    const curve = new THREE.CatmullRomCurve3([
+      start,
+      start.clone().add(V3(side * 0.6, 0.35, 0.25)),
+      target.clone().add(V3(side + 0.25, -0.45, 0.35)),
+      target.clone().add(V3(-side * 0.2 - 0.15, -0.05, 0.12)),
+      target,
+    ], false, 'centripetal')
+    const segs = 300
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, 0.0055, 8, false), new THREE.MeshBasicMaterial({ color: S.routes[key].color.clone().multiplyScalar(3), transparent: true, opacity: 1 }))
+    const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: S.routes[key].color.clone().multiplyScalar(3), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }))
+    head.scale.setScalar(0.09)
+    tube.geometry.setDrawRange(0, 0)
+    scene.add(tube, head)
+    return { curve, tube, head, segs }
+  })
+  const burst = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: new THREE.Color('#ffe7b0').multiplyScalar(3), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+  burst.position.copy(target); scene.add(burst); S.burst = burst
+}
+
+// ───────────────────────────── dust motes ─────────────────────────────
+function buildDust() {
+  const rnd = mulberry32(77), n = 900, base = new Float32Array(n * 3), phase = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const nearTable = i < 380
+    base[i * 3] = nearTable ? (rnd() - 0.5) * 4 : (rnd() - 0.5) * 9
+    base[i * 3 + 1] = nearTable ? 0.6 + rnd() * 1.6 : 0.8 + rnd() * 4.2
+    base[i * 3 + 2] = nearTable ? 1.2 - rnd() * 4 : -6 - rnd() * 16
+    phase[i] = rnd()
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(base.slice(), 3))
+  const mat = new THREE.PointsMaterial({ map: glowSprite, color: new THREE.Color('#ffd79a').multiplyScalar(1.1), size: 0.035, sizeAttenuation: true, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })
+  const pts = new THREE.Points(geo, mat)
+  pts.userData = { base, phase }
+  pts.frustumCulled = false
+  scene.add(pts)
+  S.dust = pts
+}
+
+// ───────────────────────────── captions ─────────────────────────────
+function buildCaptions() {
+  S.caps = [
+    { cap: makeCaption({ eyebrow: 'AniRoute', title: 'Every harvest deserves', title2: 'to arrive fresh.' }), a: -2.8, b: 2.6 },
+    { cap: makeCaption({ eyebrow: 'Plan the delivery', title: 'Your crop. Your load.', title2: 'Your destination.' }), a: 4.9, b: 8.7 },
+    { cap: makeCaption({ eyebrow: 'Crop-aware routing', title: 'Three routes, scored for', title2: 'time, crop and road safety.' }), a: 11.4, b: 15.2 },
+    { cap: makeCaption({ eyebrow: 'Guided trip', title: 'Follow the road that is', title2: 'gentlest on your harvest.' }), a: 15.9, b: 19.4 },
+    { cap: makeCaption({ eyebrow: 'Computer vision', title: 'Spots potholes and cracks', title2: 'in real time.' }), a: 20.4, b: 23.9 },
+    { cap: makeCaption({ eyebrow: 'Driver confirmation', title: 'Confirm by tap or voice.', title2: 'Reroute around it.' }), a: 24.3, b: 27.3 },
+  ]
+}
+
+// ───────────────────────────── camera choreography ─────────────────────────────
+// World rig: target (xyz), azimuth, elevation (deg), log distance, fov, focus offset
+let worldRig, truckCurve, truckProgress, truckLook, truckFov
+function buildCameraTracks() {
+  const sc = S.screenCenter, n = S.screenNormal
+  const scrAz = Math.atan2(n.x, n.z) / DEG, scrEl = Math.asin(n.y) / DEG
+  const routeC = S.routeCenterWorld()
+  S.routeOffset = routeC.clone().sub(MAP.pos)   // measured once, with the map at rest
+  const hz = S.routePointWorld('optimal', S.hazardU)
+  const uDive = S.hazardU
+  const pA = S.routePointWorld('optimal', uDive + 0.05), pB = S.routePointWorld('optimal', uDive - 0.02)
+  const tng = pA.clone().sub(pB).normalize()
+  const diveAz = Math.atan2(tng.x, tng.z) / DEG
+  const card = sc.clone().add(n.clone().multiplyScalar(0.05)).add(V3(0.02, 0.0, 0))
+  const logoC = S.logo.g.position.clone()
+  const k = (t, tgt, az, el, d, fov) => [t, [tgt.x, tgt.y, tgt.z, az, el, Math.log(d), fov]]
+  // Keyframes are laid out so that no channel reverses direction in the middle of a move
+  // (a reversal forces a stop, which reads as a stutter); temporal smoothing is applied on top.
+  worldRig = new Track([
+    k(-4.0, V3(1.1, 1.0, 0.85), 41, 6, 5.6, 40),        // side-on, backlit by the low sun: the farmer carries a crate to the pickup
+    k(-1.5, V3(2.2, 1.05, -0.35), 33, 8, 4.4, 38),      // closer as he lifts it onto the bed
+    k(1.2, V3(1.15, 0.95, -0.25), 29, 12, 4.0, 38),     // drift towards the farm table
+    k(3.4, sc.clone().add(V3(0.1, -0.05, -0.6)), scrAz + 25, scrEl, 3.2, 38),
+    k(4.5, sc.clone().add(V3(0.03, -0.012, 0)), scrAz + 24, scrEl + 1, 0.98, 36),
+    k(7.0, sc.clone().add(V3(0.025, -0.006, 0.02)), scrAz + 10, scrEl + 1.5, 0.66, 34),
+    k(9.0, sc.clone().add(V3(0.01, 0.0, 0.0)), scrAz + 1.2, scrEl + 3, 0.52, 34),
+    k(9.35, sc.clone().add(V3(0.01, 0.0, 0.0)), scrAz + 1.2, scrEl + 3, 0.52, 34),   // hold while the map lifts off
+    k(11.65, routeC, scrAz, 50, 2.75, 38),  // = where the flight camera ends, so the hand-back is seamless
+    k(14.9, routeC.clone().add(V3(0.04, 0, 0.02)), 17, 42, 2.25, 38),
+    k(16.0, S.routePointWorld('optimal', uDive - 0.04), Math.max(21, diveAz - 3), 30, 1.0, 38),
+    k(17.3, S.routePointWorld('optimal', uDive - 0.1), Math.max(23, diveAz), 10, 0.16, 40),
+    k(17.9, S.routePointWorld('optimal', uDive - 0.13), Math.max(24, diveAz + 1), 7, 0.1, 40),
+    k(24.4, hz, diveAz + 4, 85, 0.55, 38),
+    k(25.3, hz, diveAz + 4, 84, 0.38, 38),      // still moving in while the dialog dissolves into the map
+    k(26.6, routeC, 8, 50, 2.3, 38),
+    k(27.6, routeC.clone().lerp(logoC, 0.45), 3, 22, 2.5, 36),
+    k(28.7, logoC.clone().add(V3(0, -0.02, 0)), 0, 4, 2.6, 34),
+    k(30.0, logoC.clone().add(V3(0, -0.01, 0)), 0, 3, 2.42, 34),
+  ])
+  // Truck / cab / phone: one continuous spline, with progress along it keyed in time (always moving
+  // forward, so it never halts), ending with a push through the hazard dialog into the map.
+  const ph = S.phone.position
+  const dlg = ph.clone().add(V3(-0.122, -0.004, -0.07))
+  S.dialogRest = dlg
+  const btn = dlg.clone().add(V3(-0.055, -0.03, 0))
+  const pts = [
+    V3(0, 0.45, -24), V3(0.05, 1.3, -14), V3(0.02, 1.85, -7.2), V3(0.0, 1.72, -3.0), V3(0.0, 1.66, -0.6),
+    V3(-0.03, 1.55, 0.6), V3(ph.x - 0.02, ph.y + 0.02, ph.z - 0.37), V3(ph.x - 0.06, ph.y + 0.02, ph.z - 0.41),
+    V3(dlg.x + 0.01, dlg.y - 0.01, dlg.z - 0.27), V3(btn.x, btn.y, dlg.z - 0.06),
+  ]
+  const times = [17.0, 18.2, 19.3, 20.1, 20.7, 21.4, 22.85, 23.65, 24.45, 25.3]
+  truckCurve = new THREE.CatmullRomCurve3(pts, false, 'centripetal')
+  truckCurve.arcLengthDivisions = 6000
+  const lengths = truckCurve.getLengths(2000), total = lengths[2000]
+  const frac = pts.map((_, i) => lengths[Math.round((i / (pts.length - 1)) * 2000)] / total)
+  truckProgress = new Track(times.map((tt, i) => [tt, frac[i]]))
+  const P = (t, x, y, z) => [t, [x, y, z]]
+  truckLook = new Track([
+    P(17.0, 0, 0.6, 8), P(18.2, 0, 1.05, 5), P(19.3, -0.02, 1.2, 2.6), P(20.1, -0.06, 1.3, 1.9),
+    P(20.8, ph.x, ph.y, ph.z), P(22.5, ph.x - 0.02, ph.y, ph.z), P(23.6, ph.x - 0.066, ph.y, ph.z),
+    P(24.4, dlg.x + 0.02, dlg.y, dlg.z), P(25.3, btn.x, btn.y, btn.z),
+  ])
+  truckFov = new Track([[17.0, 46], [19.2, 40], [21.3, 34], [22.6, 32], [25.3, 30]])
+}
+// Gold guide line: leaps out of the route on the laptop screen, flies over the valley and lands on Baguio.
+const GUIDE = { a: 9.38, b: 11.15, tailA: 10.55, tailB: 11.45 }
+function screenPoint(px, py) {
+  return V3((px / 1440 - 0.5) * S.screenW, (0.5 - py / 900) * S.screenH, 0.0015).applyMatrix4(S.screen.matrixWorld)
+}
+function guideHead(t) { return S.guideLine.curve.getPointAt(ease(seg(t, GUIDE.a, GUIDE.b))) }
+function buildGuideLine() {
+  const n = S.screenNormal
+  const start = screenPoint(930, 760)            // the route on the screen's map
+  const baguio = S.routePointWorld('optimal', 0).add(V3(0, 0.012, 0))
+  const pts = [
+    start,
+    start.clone().add(n.clone().multiplyScalar(0.16)).add(V3(0.02, 0.1, 0)),   // leaps out of the screen
+    V3(0.05, 1.5, -0.45),                                                      // arcs over the laptop
+    V3(0.15, 2.65, -4.4),                                                      // out over the valley
+    V3(0.22, 2.95, -9.0),
+    baguio.clone().add(V3(0, 0.32, 0.55)),
+    baguio,
+  ]
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal')
+  curve.arcLengthDivisions = 3000
+  const segs = 900, gold = new THREE.Color('#ffcf3a')
+  const core = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, 0.0065, 8, false), new THREE.MeshBasicMaterial({ color: gold.clone().multiplyScalar(1.7) }))
+  const halo = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, 0.02, 8, false), new THREE.MeshBasicMaterial({ color: gold, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }))
+  const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: gold.clone().multiplyScalar(2.6), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
+  head.scale.setScalar(0.09)
+  const land = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite, color: gold.clone().multiplyScalar(2.4), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }))
+  land.position.copy(baguio)
+  core.geometry.setDrawRange(0, 0); halo.geometry.setDrawRange(0, 0)
+  scene.add(core, halo, head, land)
+  S.guideLine = { curve, core, halo, head, land, segs }
+}
+function animateGuideLine(t) {
+  const G = S.guideLine
+  const hu = ease(seg(t, GUIDE.a, GUIDE.b)), tu = ease(seg(t, GUIDE.tailA, GUIDE.tailB))
+  const per = 8 * 6, i0 = Math.floor(G.segs * tu) * per, i1 = Math.floor(G.segs * hu) * per
+  const count = Math.max(0, i1 - i0)
+  G.core.geometry.setDrawRange(i0, count); G.halo.geometry.setDrawRange(i0, count)
+  G.core.visible = G.halo.visible = count > 0
+  G.head.visible = hu > 0.0005 && hu < 0.999
+  if (G.head.visible) G.head.position.copy(G.curve.getPointAt(hu))
+  const lu = seg(t, GUIDE.b - 0.05, GUIDE.b + 0.7)          // a soft flash where it lands on Baguio
+  G.land.material.opacity = lu > 0 ? Math.sin(Math.PI * lu) * 0.9 : 0
+  G.land.scale.setScalar(0.05 + 0.25 * lu)
+}
+// Gaussian temporal smoothing of a keyframe track (sigma in seconds).
+const GAUSS = (() => { const n = 17, w = []; let s = 0; for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 4 - 2; const v = Math.exp(-x * x / 2); w.push([x, v]); s += v } return w.map(([x, v]) => [x, v / s]) })()
+function smoothAt(track, t, sigma, lo = T0, hi = DURATION) {
+  let acc = null
+  for (const [x, w] of GAUSS) {
+    const v = track.at(clamp(t + x * sigma, lo, hi))
+    if (!acc) acc = v.map(c => c * w); else v.forEach((c, i) => { acc[i] += c * w })
+  }
+  return acc
+}
+function rigToCamera(cam, v) {
+  const [x, y, z, az, el, ld, fov] = v
+  const d = Math.exp(ld), tgt = V3(x, y, z)
+  const off = V3(Math.sin(az * DEG) * Math.cos(el * DEG), Math.sin(el * DEG), Math.cos(az * DEG) * Math.cos(el * DEG)).multiplyScalar(d)
+  cam.position.copy(tgt).add(off)
+  cam.up.set(0, 1, 0)
+  cam.lookAt(tgt)
+  cam.fov = fov; cam.updateProjectionMatrix()
+  return d
+}
+function rigPose(v) {
+  const [x, y, z, az, el, ld, fov] = v
+  const d = Math.exp(ld), tgt = V3(x, y, z)
+  const pos = tgt.clone().add(V3(Math.sin(az * DEG) * Math.cos(el * DEG), Math.sin(el * DEG), Math.cos(az * DEG) * Math.cos(el * DEG)).multiplyScalar(d))
+  return { pos, tgt, fov }
+}
+let flightPath = null, flightLook = null
+function buildFlightPath() {
+  const start = rigPose(worldRig.at(9.3)), end = rigPose(worldRig.at(11.65))
+  const P = (tt, v) => [tt, [v.x, v.y, v.z]]
+  flightPath = new Track([
+    P(9.3, start.pos),
+    P(9.95, V3(start.pos.x + 0.04, start.pos.y + 0.42, start.pos.z + 0.5)),    // ease up and back: the screen stays in frame as the line leaps out
+    P(10.8, V3(lerp(start.pos.x, end.pos.x, 0.5), end.pos.y + 0.3, lerp(start.pos.z, end.pos.z, 0.62))),   // already high: the tilt down is spread out
+    P(11.65, end.pos),
+  ])
+  // where to look: keyed to where the map is at those moments, interpolated smoothly in between
+  const hold = S.screenCenter.clone().add(V3(0.01, 0, 0))
+  // where to look: follow the gold line's head, then settle on the routes
+  flightLook = new Track([
+    P(9.3, hold),
+    P(9.95, hold.clone().lerp(guideHead(9.95), 0.45)),     // the eye lifts slowly from the screen to the line
+    P(10.45, guideHead(10.45)),
+    P(10.95, guideHead(10.95).lerp(end.tgt, 0.4)),
+    P(11.65, end.tgt),
+  ])
+}
+function worldCamera(cam, t) {
+  const v = smoothAt(worldRig, t, 0.22)
+  const w = smooth(9.1, 9.45, t) * (1 - smooth(11.55, 12.05, t))
+  if (w <= 0) return rigToCamera(cam, v)
+  if (!flightPath) buildFlightPath()
+  const rig = rigPose(v)
+  const flightTgt = V3(...smoothAt(flightLook, t, 0.15, 9.0, 11.65))
+  const flightPos = V3(...smoothAt(flightPath, t, 0.12, 9.0, 11.65))
+  const pos = rig.pos.lerp(flightPos, w), tgt = rig.tgt.lerp(flightTgt, w)
+  cam.position.copy(pos); cam.up.set(0, 1, 0); cam.lookAt(tgt)
+  cam.fov = lerp(rig.fov, lerp(34, 38, smooth(9.35, 11.65, t)), w); cam.updateProjectionMatrix()
+  return pos.distanceTo(tgt)
+}
+function truckCamera(cam, t) {
+  const u = clamp(smoothAt(truckProgress, t, 0.16, 17.0, 25.3)[0])
+  const p = truckCurve.getPointAt(u).clone(), l = V3(...smoothAt(truckLook, t, 0.3, 17.0, 25.3))
+  S.truck.updateMatrixWorld(true)
+  const wp = p.applyMatrix4(S.truck.matrixWorld), wl = l.applyMatrix4(S.truck.matrixWorld)
+  cam.position.copy(wp); cam.up.set(0, 1, 0); cam.lookAt(wl)
+  cam.fov = smoothAt(truckFov, t, 0.2, 17.0, 25.3)[0]; cam.updateProjectionMatrix()
+  return wp.distanceTo(wl)
+}
+
+// ───────────────────────────── post-processing ─────────────────────────────
+const rtOpts = { type: THREE.HalfFloatType, samples: 4 }
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(W, H, rtOpts))
+composer.setPixelRatio(1); composer.setSize(W, H)
+const renderPass = new RenderPass(scene, camera)
+composer.addPass(renderPass)
+
+class TransitionPass extends Pass {
+  constructor() {
+    super()
+    this.rtB = new THREE.WebGLRenderTarget(W, H, rtOpts)
+    this.mix = 0
+    this.quad = new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: { tA: { value: null }, tB: { value: null }, mixv: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `varying vec2 vUv; uniform sampler2D tA; uniform sampler2D tB; uniform float mixv;
+        vec4 zoom(sampler2D t, vec2 uv, float k){ vec4 c = vec4(0.0); vec2 d = uv - 0.5; for (int i = 0; i < 20; i++){ float s = 1.0 - k * float(i) / 19.0; c += texture2D(t, 0.5 + d * s); } return c / 20.0; }
+        void main(){
+          float m = smoothstep(0.0, 1.0, mixv);
+          vec4 a = zoom(tA, vUv, 0.12 * m);
+          vec4 b = zoom(tB, vUv, 0.12 * (1.0 - m));
+          float lb = dot(b.rgb, vec3(0.3, 0.59, 0.11));
+          float km = clamp(m * 1.6 - 0.3 + (lb - 0.5) * 0.35, 0.0, 1.0);
+          vec4 c = mix(a, b, km);
+          c.rgb += vec3(1.0, 0.86, 0.62) * sin(3.14159 * m) * 0.14;
+          gl_FragColor = c;
+        }`,
+    }))
+  }
+  render(r, writeBuffer, readBuffer) {
+    r.setRenderTarget(this.rtB); r.clear(); r.render(scene, cameraB)
+    this.quad.material.uniforms.tA.value = readBuffer.texture
+    this.quad.material.uniforms.tB.value = this.rtB.texture
+    this.quad.material.uniforms.mixv.value = this.mix
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer)
+    this.quad.render(r)
+  }
+}
+const transitionPass = new TransitionPass(); transitionPass.enabled = false
+composer.addPass(transitionPass)
+
+const bokeh = new BokehPass(scene, camera, { focus: 1, aperture: 0.002, maxblur: 0.008 })
+composer.addPass(bokeh)
+
+const godRays = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, sunPos: { value: new THREE.Vector2(0.5, 0.5) }, strength: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tDiffuse; uniform vec2 sunPos; uniform float strength;
+    void main(){
+      vec4 base = texture2D(tDiffuse, vUv);
+      if (strength <= 0.0) { gl_FragColor = base; return; }
+      vec2 d = (vUv - sunPos) / 48.0 * 0.85; vec2 uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
+      for (int i = 0; i < 48; i++){ uv -= d; vec3 s = texture2D(tDiffuse, uv).rgb; float l = max(dot(s, vec3(0.3,0.59,0.11)) - 1.15, 0.0); acc += s * l * decay; decay *= 0.965; }
+      gl_FragColor = vec4(base.rgb + acc / 48.0 * strength * vec3(1.0, 0.82, 0.58), base.a);
+    }`,
+})
+godRays.enabled = false
+composer.addPass(godRays)
+
+const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.38, 0.55, 1.0)
+composer.addPass(bloom)
+composer.addPass(new OutputPass())
+
+const captionPass = new RenderPass(captionScene, captionCam)
+captionPass.clear = false; captionPass.clearDepth = true; captionPass.needsSwap = false
+composer.addPass(captionPass)
+
+const grade = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, fade: { value: 1 }, res: { value: new THREE.Vector2(W, H) }, leak: { value: 0 }, leakPos: { value: new THREE.Vector2(0.5, 0.5) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tDiffuse; uniform float time; uniform float fade; uniform vec2 res; uniform float leak; uniform vec2 leakPos;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + time * 37.0) * 43758.5453); }
+    void main(){
+      vec2 d = vUv - 0.5; float r2 = dot(d, d);
+      vec2 off = d * r2 * 0.006;
+      vec3 c = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      c = mix(c, c * vec3(1.03, 1.0, 0.95) + vec3(0.012, 0.008, 0.0), 0.6);
+      c *= 1.0 - smoothstep(0.18, 0.75, r2) * 0.42;
+      // warm anamorphic light leak that sweeps across on transitions
+      vec2 q = (vUv - leakPos) * vec2(0.55, 1.6);
+      float lk = exp(-dot(q, q) * 4.0) * leak;
+      float streak = exp(-pow((vUv.y - leakPos.y) * 9.0, 2.0)) * leak * 0.35;
+      c = 1.0 - (1.0 - c) * (1.0 - vec3(1.0, 0.68, 0.36) * lk) * (1.0 - vec3(1.0, 0.82, 0.6) * streak);
+      c += (hash(vUv * res) - 0.5) * 0.028;
+      gl_FragColor = vec4(c * fade, 1.0);
+    }`,
+})
+composer.addPass(grade)
+
+// Light leaks on the big transitions: screen-space warm glow that sweeps across the frame.
+const LEAKS = [
+  { a: 9.45, b: 10.45, k: 0.32, x0: 0.62, x1: 0.45, y0: 0.62, y1: 0.42 },
+  { a: 16.85, b: 18.1, k: 0.6, x0: 0.25, x1: 0.8, y0: 0.6, y1: 0.45 },
+  { a: 24.35, b: 25.45, k: 0.7, x0: 0.6, x1: 0.5, y0: 0.52, y1: 0.5 },
+  { a: 27.9, b: 29.0, k: 0.45, x0: 0.3, x1: 0.62, y0: 0.62, y1: 0.55 },
+]
+
+// ───────────────────────────── per-frame animation ─────────────────────────────
+const tmpV = V3(), tmpQ = new THREE.Quaternion()
+function placeShadow(focus, radius) {
+  sun.position.copy(focus).add(SUN_DIR.clone().multiplyScalar(radius * 4))
+  sun.target.position.copy(focus)
+  const c = sun.shadow.camera
+  c.left = -radius; c.right = radius; c.top = radius; c.bottom = -radius; c.near = 0.01; c.far = radius * 9
+  c.updateProjectionMatrix()
+}
+function drawRoute(r, u) {
+  const n = Math.floor(r.segs * clamp(u)) * 8 * 6
+  r.core.geometry.setDrawRange(0, n); r.halo.geometry.setDrawRange(0, n)
+  r.head.visible = u > 0.001 && u < 0.999
+  if (r.head.visible) r.head.position.copy(r.curve.getPointAt(clamp(u)))
+}
+
+function placeTruck(t, bob = true) {
+  if (t < 16.5) {   // parked at the farm (the camera is over the map when it moves to the road)
+    S.truck.position.copy(PARK.pos); S.truck.rotation.set(0, PARK.rotY, 0)
+    S.wheels.forEach(w => { w.rotation.x = 0 })
+    S.truck.updateMatrixWorld(true)
+    return
+  }
+  const truckS = 150 + Math.max(0, t - 15.5) * 11
+  const tu = clamp(truckS / ROAD_LEN)
+  const tp = roadCurve.getPointAt(tu), tg = roadCurve.getTangentAt(tu)
+  S.truck.position.set(tp.x, ROAD_Y, tp.z)
+  S.truck.rotation.set(0, Math.atan2(tg.x, tg.z), 0)
+  if (bob) S.truck.position.y += Math.sin(t * 13.0) * 0.004 + Math.sin(t * 7.3) * 0.003
+  S.wheels.forEach(w => { w.rotation.x = truckS / 0.4 })
+  S.truck.updateMatrixWorld(true)
+}
+
+function frame(t) {
+  placeTruck(t)
+  animateFarmer(t)
+
+  // ── laptop screen + form card (4.2 – 9.2)
+  const TAP_FIND = 7.72
+  const lift = easeOutQuint(seg(t, 5.0, 6.2)), dock = ease(seg(t, 8.35, 9.12))
+  const lv = lift * (1 - dock)
+  const fc = S.formCard
+  fc.visible = t > 4.6 && t < 9.2
+  const restPos = S.formOnScreen, liftPos = V3(0.03, -0.012, 0.06)
+  fc.position.copy(restPos).lerp(liftPos, lv)
+  const sc = lerp(S.formOnScreenScale, 1.16, lv)
+  fc.scale.setScalar(sc)
+  fc.rotation.set(-4 * DEG * lv, (-14 * DEG) * Math.sin(Math.PI * clamp(lift * 0.999)) * (1 - dock) + 4 * DEG * lv, 0)
+  // the glass and shadow melt away as the card lands; the filled form itself lands exactly on the page's form
+  setOpacity(S.formEmpty, smooth(4.6, 5.0, t) * (1 - dock))
+  setOpacity(S.formFilled, smooth(4.6, 5.0, t) * (1 - smooth(9.08, 9.18, t)))
+  animateButtonFX(S.findFx, t, TAP_FIND, 8.2)
+  const sh = S.formFilled.userData.face.material.userData.shader
+  if (sh) sh.uniforms.wipe.value = ease(seg(t, 5.7, 7.6))
+  S.scrA.material.color.setScalar(0.93 * (1 - 0.38 * lv))
+  const shB = S.scrB.material.userData.shader
+  const reveal = ease(seg(t, TAP_FIND + 0.15, TAP_FIND + 0.75))   // results build down the screen after the press
+  if (shB) shB.uniforms.reveal.value = reveal
+  S.scrB.visible = reveal > 0
+  S.scrB.material.color.setScalar(0.93 * (1 - 0.38 * lv) + 0.1 * smooth(9.3, 10.0, t) * (1 - smooth(10.4, 11.0, t)))
+
+  // ── map morph: from the laptop screen's map panel to a floating relief map (9.2 – 11.4)
+  const map = S.map
+  map.visible = t > 9.95
+  animateGuideLine(t)
+  if (map.visible) {
+    // the map unfolds in its place over the valley just before the gold line reaches it
+    map.position.copy(MAP.pos); map.quaternion.identity(); map.scale.setScalar(Math.max(0.001, easeOutBack(seg(t, 9.95, 10.85), 1.2)))
+    S.relief.scale.y = lerp(0.03, 1, ease(seg(t, 10.55, 11.8)))   // the mountains rise as the line arrives
+    const mo = smooth(10.3, 11.2, t)
+    S.mapDecor.forEach(m => { if (m.userData.op === undefined) m.userData.op = m.material.opacity; m.material.opacity = m.userData.op * mo; m.visible = mo > 0.01 })
+  }
+  // routes ignite
+  const keys = ['optimal', 'fastest', 'safer']
+  keys.forEach((key, i) => {
+    const r = S.routes[key]
+    const u = ease(seg(t, 11.2 + i * 0.28, 12.9 + i * 0.28))
+    drawRoute(r, u)
+    // emphasis: emerald brightens 15–16, others dim; after the hazard, safer becomes the new pick
+    let intensity = 1
+    if (key === 'optimal') intensity = 1 + 0.9 * smooth(15.0, 15.9, t) - 1.0 * smooth(25.9, 26.6, t)
+    else intensity = 1 - 0.72 * smooth(15.0, 15.9, t) - 0.2 * smooth(16.0, 16.6, t) * (1 - smooth(24.4, 25.0, t)) + (key === 'safer' ? 1.6 : 0.3) * smooth(25.9, 26.6, t)
+    r.core.material.color.copy(r.baseColor).multiplyScalar(Math.max(0.15, intensity))
+    if (key !== 'optimal') {
+      // the other two roads leave the frame entirely while we dive along the recommended one
+      const gone = smooth(15.9, 16.4, t) * (1 - smooth(24.5, 25.2, t))
+      r.core.material.transparent = true
+      r.core.material.opacity = 1 - gone
+      r.core.visible = r.halo.visible = gone < 0.99
+    }
+    r.halo.material.opacity = 0.28 * Math.max(0.0, intensity - 0.1) * (1 - 0.85 * smooth(16.1, 16.8, t) * (1 - smooth(24.4, 25.2, t)))
+    if (key === 'optimal' && t > 25.6) {
+      const hot = smooth(25.6, 26.0, t)
+      r.core.material.color.lerp(new THREE.Color('#ff5a5f').multiplyScalar(1.4), hot * 0.55)
+    }
+  })
+  // reroute: the safer road re-draws with a fresh light head after the hazard is confirmed
+  if (t > 25.9) { const r = S.routes.safer; const u = ease(seg(t, 25.9, 27.0)); r.head.visible = u < 0.999; r.head.position.copy(r.curve.getPointAt(u)); r.head.scale.setScalar(0.06) }
+  // pins
+  const pinPop = (p, a) => { const u = seg(t, a, a + 0.7); p.visible = u > 0; p.position.y = p.userData.baseY + (1 - easeOutBack(u, 2.2)) * 0.15; p.scale.setScalar(clamp(u * 3)) }
+  for (const p of [S.pinA, S.pinB, S.pinH]) if (p.userData.baseY === undefined) p.userData.baseY = p.position.y
+  pinPop(S.pinA, 11.0); pinPop(S.pinB, 12.4); pinPop(S.pinH, 25.45)
+  const ru = seg(t, 25.75, 27.0)
+  S.hazardRipple.material.opacity = (1 - ru) * (ru > 0 ? 0.9 : 0)
+  S.hazardRipple.scale.setScalar(0.01 + ru * 0.16)
+  const labelFade = 1 - smooth(27.0, 27.7, t)
+  for (const p of [S.pinA, S.pinB, S.pinH]) if (p.userData.label) p.userData.label.material.opacity = labelFade
+
+  // route cards rise beside the map, facing the camera (12.4 – 15.6)
+  S.routeCards.forEach((card, i) => {
+    const a = 12.5 + i * 0.22, u = seg(t, a, a + 0.9)
+    const o = easeOut(u) * (1 - smooth(15.0, 15.6, t))
+    setOpacity(card, o)
+    if (!card.visible) return
+    const camRight = V3(1, 0, 0).applyQuaternion(camera.quaternion).setY(0).normalize()
+    const anchor = S.routePointWorld(S.cardRoute[i], S.cardU[i])
+    card.position.copy(anchor).add(V3(0, S.cardH[i] + (1 - easeOutBack(u, 1.4)) * -0.1, 0)).add(camRight.multiplyScalar(S.cardSide[i]))
+    card.lookAt(camera.position)
+    // leader line from the road up to the bottom of its card
+    const L = S.cardLeaders[i]
+    const bottom = V3(0, -card.userData.height / 2, 0).applyQuaternion(card.quaternion).add(card.position)
+    L.line.position.copy(anchor).add(bottom).multiplyScalar(0.5)
+    L.line.scale.set(1, anchor.distanceTo(bottom), 1)
+    L.line.quaternion.setFromUnitVectors(V3(0, 1, 0), bottom.clone().sub(anchor).normalize())
+    L.line.material.opacity = 0.85 * o
+    L.dot.position.copy(anchor); L.dot.material.opacity = o
+  })
+  if (S.cardLeaders) S.cardLeaders.forEach((L, i) => { L.line.visible = L.dot.visible = S.routeCards[i].visible })
+
+  // ── road guide line
+  S.guide.material.opacity = smooth(16.9, 17.3, t) * (1 - smooth(18.3, 19.2, t)) * 0.9
+  // ── passenger window/door hidden while the camera is inside the cab
+  // ── phone screen states
+  S.phoneDet.material.opacity = smooth(21.0, 21.25, t)
+  S.phoneFlash.material.opacity = pulse(t, 21.0, 21.9) * 0.9
+  S.phoneFlash.scale.setScalar(0.03 + 0.05 * seg(t, 21.0, 21.9))
+  // ── hazard dialog floats out of the phone (21.8 – 22.8), tap at 23.9
+  const du = easeOutQuint(seg(t, 21.8, 22.9))
+  const dlg = S.dialog
+  setOpacity(dlg, smooth(21.8, 22.1, t) * (1 - smooth(25.05, 25.3, t)))
+  if (dlg.visible) {
+    dlg.position.copy(S.phone.position).lerp(S.dialogRest, du)
+    dlg.quaternion.copy(S.phone.quaternion)
+    dlg.rotateY(lerp(-25 * DEG, 0, du)); dlg.rotateX(lerp(8 * DEG, 0, du))
+    dlg.scale.setScalar(lerp(0.3, 1, du))
+  }
+  animateButtonFX(S.confirmFx, t, 24.0, Infinity, 24.42)
+
+  // ── finale ribbons and logo (27.0 – 30)
+  S.finaleRibbons.forEach((rb, i) => {
+    const u = ease(seg(t, 27.0 + i * 0.12, 28.25 + i * 0.12))
+    rb.tube.geometry.setDrawRange(0, Math.floor(rb.segs * u) * 8 * 6)
+    rb.head.visible = u > 0.001 && u < 0.995
+    if (rb.head.visible) rb.head.position.copy(rb.curve.getPointAt(u))
+    rb.tube.material.opacity = 1 - smooth(28.25, 28.85, t)
+    rb.tube.visible = rb.tube.material.opacity > 0.01
+  })
+  S.burst.material.opacity = pulse(t, 28.2, 29.0)
+  S.burst.scale.setScalar(0.2 + 0.9 * seg(t, 28.2, 29.0))
+  const L = S.logo
+  const lo = easeOut(seg(t, 28.0, 28.9))
+  L.g.visible = t > 27.4
+  L.g.scale.setScalar(lerp(0.92, 1, lo))
+  L.panel.material.opacity = lo; L.tint.material.opacity = 0.82 * lo; L.logo.material.opacity = lo
+  L.tagline.material.opacity = easeOut(seg(t, 28.7, 29.5))
+  const sw = seg(t, 28.5, 29.6)
+  L.sweep.material.opacity = pulse(t, 28.5, 29.6) * 0.8
+  L.sweep.position.x = lerp(-L.panelW * 0.62, L.panelW * 0.62, ease(sw))
+  L.g.lookAt(camera.position)
+
+  // ── captions
+  S.caps.forEach(({ cap, a, b }) => animateCaption(cap, t, a, b))
+
+  // ── camera
+  let focusDist = 1, aperture = 0.0018, maxblur = 0.007, mixv = 0
+  const inTruck = t >= 17.9 && t < 25.3
+  if (!inTruck) focusDist = worldCamera(camera, t)
+  else focusDist = truckCamera(camera, t)
+  if (t >= 17.0 && t < 17.9) { truckCamera(cameraB, t); mixv = seg(t, 17.0, 17.9) }
+  if (t >= 24.4 && t < 25.3) { worldCamera(cameraB, t); mixv = seg(t, 24.4, 25.3) }
+  transitionPass.enabled = mixv > 0 && mixv < 1
+  transitionPass.mix = mixv
+  if (mixv >= 1) { /* handled by switching primary camera */ }
+  // depth of field per shot
+  if (t < 3.0) { focusDist = 120; aperture = 0.00002; maxblur = 0.004 }
+  else if (t < 4.6) { const u = ease(seg(t, 3.0, 4.4)); focusDist = Math.exp(lerp(Math.log(60), Math.log(camera.position.distanceTo(S.screenCenter)), u)); aperture = lerp(0.0001, 0.0035, u) }
+  else if (t < 9.2) { focusDist = camera.position.distanceTo(S.formCard.getWorldPosition(tmpV)) * (lv > 0.1 ? 1 : 0) + camera.position.distanceTo(S.screenCenter) * (lv > 0.1 ? 0 : 1); aperture = 0.004; maxblur = 0.008 }
+  else if (t < 11.6) { aperture = 0.003; maxblur = 0.008 }
+  else if (t < 17.9) { aperture = t > 15.8 ? 0.008 : 0.0028; maxblur = 0.009 }
+  else if (t < 25.3) { aperture = t > 20.5 ? 0.006 : 0.0012; maxblur = 0.01 }
+  else { aperture = 0.0022; maxblur = 0.008 }
+  bokeh.uniforms.focus.value = focusDist
+  bokeh.uniforms.aperture.value = aperture
+  bokeh.uniforms.maxblur.value = transitionPass.enabled ? 0 : maxblur
+  bokeh.camera = camera
+
+  // passenger window and door vanish once the camera is inside the cab
+  const local = camera.position.clone().applyMatrix4(S.truck.matrixWorld.clone().invert())
+  S.rearGlass.visible = !(inTruck && local.z > -0.35)
+
+  // shadows follow the action
+  if (t < 4.6) placeShadow(V3(1.4, 0.8, -0.4), lerp(6.0, 2.2, ease(seg(t, 1.5, 4.4))))
+  else if (t < 9.6) placeShadow(V3(0, 0.8, -0.1), 1.6)
+  else if (t < 17.45 || t >= 24.85) placeShadow(MAP.pos.clone().add(V3(0, 0, 0.3)), 2.8)
+  else placeShadow(S.truck.position.clone(), 9)
+
+  // sun shafts when the sun is in front of the camera
+  const sunWorld = camera.position.clone().add(SUN_DIR.clone().multiplyScalar(5000))
+  const sp = sunWorld.clone().project(camera)
+  const facing = SUN_DIR.dot(camera.getWorldDirection(tmpV)) > 0
+  godRays.uniforms.sunPos.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5)
+  godRays.uniforms.strength.value = facing && Math.abs(sp.x) < 1.6 && Math.abs(sp.y) < 1.6 ? 1.1 * (1 - smooth(1.0, 1.6, Math.max(Math.abs(sp.x), Math.abs(sp.y)))) : 0
+
+  sky.position.copy(camera.position)
+  grade.uniforms.time.value = Math.floor(t * 30) / 30
+  let leak = 0
+  for (const L of LEAKS) {
+    const u = seg(t, L.a, L.b)
+    if (u <= 0 || u >= 1) continue
+    leak = Math.max(leak, Math.sin(Math.PI * u) ** 1.5 * L.k)
+    grade.uniforms.leakPos.value.set(lerp(L.x0, L.x1, ease(u)), lerp(L.y0, L.y1, ease(u)))
+  }
+  grade.uniforms.leak.value = leak
+  if (S.dust) {
+    S.dust.material.opacity = 0.55 * (1 - smooth(16.6, 17.2, t)) + 0.55 * smooth(25.0, 25.6, t)
+    const pa = S.dust.geometry.attributes.position, base = S.dust.userData.base, ph = S.dust.userData.phase
+    for (let i = 0; i < pa.count; i++) {
+      const k = ph[i]
+      pa.setXYZ(i, base[i * 3] + Math.sin(t * 0.35 + k * 6.1) * 0.35, base[i * 3 + 1] + Math.sin(t * 0.27 + k * 9.7) * 0.25 + t * 0.03, base[i * 3 + 2] + Math.cos(t * 0.3 + k * 4.3) * 0.35)
+    }
+    pa.needsUpdate = true
+  }
+  grade.uniforms.fade.value = smooth(T0, T0 + 0.7, t)
+  bloom.strength = 0.38 + 0.3 * pulse(t, 28.1, 29.0)
+  composer.render()
+}
+
+// ───────────────────────────── boot ─────────────────────────────
+await build()
+const SUBFRAMES = RENDER_MODE ? Number(params.get('sub') || 5) : 1
+const FPS = Number(params.get('fps')) || 30
+const SHUTTER = 0.5 / FPS
+const accumRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType })
+const quadVS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }'
+const accumQuad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { tex: { value: null }, w: { value: 1 } }, vertexShader: quadVS,
+  fragmentShader: 'varying vec2 vUv; uniform sampler2D tex; uniform float w; void main(){ gl_FragColor = vec4(texture2D(tex, vUv).rgb * w, 1.0); }',
+  blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false }))
+const showQuad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { tex: { value: accumRT.texture } }, vertexShader: quadVS,
+  fragmentShader: 'varying vec2 vUv; uniform sampler2D tex; void main(){ gl_FragColor = vec4(texture2D(tex, vUv).rgb, 1.0); }', depthTest: false, depthWrite: false }))
+window.__frame = T => {
+  if (SUBFRAMES <= 1) { composer.renderToScreen = true; frame(storyTime(T)); return true }
+  composer.renderToScreen = false
+  renderer.setRenderTarget(accumRT); renderer.setClearColor(0x000000, 0); renderer.clear()
+  for (let i = 0; i < SUBFRAMES; i++) {
+    const ts = storyTime(clamp(T + (i / (SUBFRAMES - 1) - 0.5) * SHUTTER, 0, FILM_DURATION - 0.0001))
+    frame(ts)
+    renderer.setRenderTarget(accumRT)
+    accumQuad.material.uniforms.tex.value = composer.readBuffer.texture
+    accumQuad.material.uniforms.w.value = 1 / SUBFRAMES
+    renderer.autoClear = false   // accumulate: never clear between sub-frames
+    accumQuad.render(renderer)
+    renderer.autoClear = true
+  }
+  renderer.setRenderTarget(null)
+  showQuad.render(renderer)
+  return true
+}
+window.__duration = FILM_DURATION
+window.__storyTime = storyTime
+// camera-path probe (used to check motion smoothness): position + forward vector at time t
+window.__cam = t => {
+  placeTruck(t, false)
+  const c = new THREE.PerspectiveCamera()
+  if (t >= 17.9 && t < 25.3) truckCamera(c, t); else worldCamera(c, t)
+  const d = c.getWorldDirection(V3())
+  const lp = c.position.clone().applyMatrix4(S.truck.matrixWorld.clone().invert())
+  return [c.position.x, c.position.y, c.position.z, d.x, d.y, d.z, lp.x, lp.y, lp.z]
+}
+window.__ready = true
+if (!RENDER_MODE) {
+  const hud = document.getElementById('hud')
+  const start = performance.now()
+  const seek = Number(params.get('t'))
+  const loop = () => {
+    const T = Number.isFinite(seek) && params.has('t') ? seek : ((performance.now() - start) / 1000) % FILM_DURATION
+    frame(storyTime(T)); hud.textContent = `${T.toFixed(2)} s`
+    if (!params.has('t')) requestAnimationFrame(loop)
+  }
+  loop()
+}

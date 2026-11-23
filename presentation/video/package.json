@@ -1,0 +1,15 @@
+{
+  "name": "aniroute-product-film",
+  "private": true,
+  "type": "module",
+  "description": "30-second 3D product film for AniRoute, rendered with Three.js and encoded with ffmpeg",
+  "scripts": {
+    "capture": "node capture-assets.mjs",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "three": "0.169.0",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2"
+  }
+}

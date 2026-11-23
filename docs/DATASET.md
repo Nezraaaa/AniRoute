@@ -25,6 +25,9 @@ plus a `data.yaml` that names the classes and the folders. Images are split into
 
 The project focuses on these two road-damage classes. `standing_water` is driver-reported only.
 
+> **Warning, found in our audit:** in this mirror most `pothole` boxes are faded lane paint, not potholes
+> (`ml/reports/pothole_label_audit.md`). Always look at sample boxes per class before training.
+
 ## Source actually used
 
 | Dataset | Link | License | Images used | Class mapping |

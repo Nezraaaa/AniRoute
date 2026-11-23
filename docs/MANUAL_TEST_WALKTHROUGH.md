@@ -133,7 +133,7 @@ Pass criteria:
 - The camera preview opens.
 - The application analyses frames without building a request backlog.
 - Detected boxes stay aligned with the camera image.
-- A water-filled pothole image produces pothole boxes around the reflective road depressions when it fills most of the camera view.
+- (Only with `ANIROUTE_ENABLE_WATER_POTHOLE_DETECTOR=true`; off by default.) A water-filled pothole image produces pothole boxes around the reflective road depressions when it fills most of the camera view.
 - Denying camera permission produces a clear permission message and does not break the page.
 
 ## 7. Test the Evaluation page

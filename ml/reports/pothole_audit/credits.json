@@ -1,0 +1,25 @@
+{
+ "real_pothole_photos": [
+  {
+   "title": "File:Pothole Big.jpg",
+   "license": "Public domain",
+   "author": "Uncl3dad",
+   "page": "https://commons.wikimedia.org/wiki/File:Pothole_Big.jpg"
+  },
+  {
+   "title": "File:A pothole in Dilova Street in Kyiv.jpg",
+   "license": "CC0",
+   "author": "Роман Рябенко",
+   "page": "https://commons.wikimedia.org/wiki/File:A_pothole_in_Dilova_Street_in_Kyiv.jpg"
+  },
+  {
+   "title": "File:Pothole in Villeray, Montréal.jpg",
+   "license": "Public domain",
+   "author": "Miguel Tremblay",
+   "page": "https://commons.wikimedia.org/wiki/File:Pothole_in_Villeray,_Montr%C3%A9al.jpg"
+  }
+ ],
+ "tested": 14,
+ "detected": 0,
+ "note": "Center-cropped to squares for the slide."
+}

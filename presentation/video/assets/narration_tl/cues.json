@@ -1,0 +1,65 @@
+[
+ {
+  "file": "line0.wav",
+  "start": 1.2,
+  "duration": 2.056,
+  "text": "Bawat ani ay dapat dumating nang sariwa.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line1.wav",
+  "start": 7.6,
+  "duration": 3.376,
+  "text": "Sabihin sa AniRoute kung ano ang dala mo, at kung saan ito pupunta.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line2.wav",
+  "start": 13.9,
+  "duration": 2.537,
+  "text": "Hinahanap nito ang totoong daan papunta sa palengke,",
+  "tempo": 1.0
+ },
+ {
+  "file": "line3.wav",
+  "start": 16.8,
+  "duration": 3.901,
+  "text": "at sinusuri ang bawat isa: oras, uri ng ani, at kaligtasan ng daan.",
+  "tempo": 1.09
+ },
+ {
+  "file": "line4.wav",
+  "start": 20.95,
+  "duration": 2.646,
+  "text": "Piliin ang pinakamaingat na daan para sa iyong ani.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line5.wav",
+  "start": 24.0,
+  "duration": 2.857,
+  "text": "Pagkatapos, sundan ito, bawat kilometro ng biyahe.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line6.wav",
+  "start": 28.6,
+  "duration": 4.009,
+  "text": "Nakikita ng camera ng telepono mo ang bitak at sirang kalsada, agad-agad.",
+  "tempo": 1.0
+ },
+ {
+  "file": "line7.wav",
+  "start": 32.9,
+  "duration": 3.699,
+  "text": "Kumpirmahin sa isang tap, at hahanap ang AniRoute ng mas ligtas na daan.",
+  "tempo": 1.003
+ },
+ {
+  "file": "line8.wav",
+  "start": 37.1,
+  "duration": 2.156,
+  "text": "Protektahan ang ani, hanggang sa palengke.",
+  "tempo": 1.0
+ }
+]

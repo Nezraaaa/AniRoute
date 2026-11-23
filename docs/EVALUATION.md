@@ -59,7 +59,12 @@ The running application uses confidence **0.40**, selected on validation to targ
 | **overall** | **264** | **0.783** | **0.136** | **0.232** | 36 / 10 / 228 |
 
 This profile makes displayed alerts more trustworthy but misses substantially more hazards. It must be
-reported as **78.3% precision**, not 78.3% accuracy. The threshold-independent mAP values remain unchanged.
+reported as **78.3% precision**, not 78.3% accuracy.
+
+> **Pothole label audit.** In the public mirror we trained on, most boxes in the "pothole" class are faded
+> lane paint, so the pothole rows above measure agreement with faulty labels. The deployed model found
+> 0 of 14 real pothole photos. The crack rows are genuine: 86% of crack alerts match a human label. See
+> [`ml/reports/pothole_label_audit.md`](../ml/reports/pothole_label_audit.md). The threshold-independent mAP values remain unchanged.
 The complete profile is stored in `ml/reports/high_confidence_profile.json`.
 
 Confusion matrix (rows = true, columns = predicted): the two classes are almost never confused with each
@@ -105,11 +110,13 @@ images), so that column is indicative only. `ablation_bar.png`, `preprocessing_b
 
 | Model | PyTorch 640 | ONNX 640 | OpenVINO 640 |
 | --- | ---: | ---: | ---: |
-| Pothole and crack detector | 50.8 ms | 39.3 ms | **37.7 ms** |
+| Pothole and crack detector | 48.0 ms | 37.0 ms | **33.4 ms** |
 
-End to end (preprocessing + detection, auto-selected OpenVINO): **33.2 ms per frame ≈ 30 FPS** (95th
-percentile 41 ms). OpenVINO is 26% faster than PyTorch on the same CPU. The app only needs 2 frames per
-second during a trip, so there is ample headroom.
+End to end (preprocessing + detection, auto-selected OpenVINO): **32.2 ms per frame ≈ 31 FPS** (100 runs
+per row; separate shorter runs on the busy laptop ranged 31–47 ms). OpenVINO is 30% faster than PyTorch on
+the same CPU. The experimental water-filled-pothole check is off by default; with it on, the pipeline
+measured about 61 ms (16 FPS). The app only needs 2 frames per second during a trip, so there is ample
+headroom.
 Re-run `python ml/evaluate.py latency` on the laptop you present with. `latency.json`, `speed_chart.png`.
 
 ![Speed](../ml/reports/speed_chart.png)
@@ -118,11 +125,11 @@ Re-run `python ml/evaluate.py latency` on the laptop you present with. `latency.
 
 | | Alerts | Alerts per minute |
 | --- | ---: | ---: |
-| Every frame with a detection | 18 | 30 |
-| **2-of-3 frames + 20 s cooldown** | **2** | **3.3** |
+| Every frame with a detection | 6 | 10 |
+| **2-of-3 frames + 20 s cooldown** | **1** | **1.7** |
 
-Smoothing cut alerts by 89%, the difference between an app a driver ignores and one they can use.
-`smoothing.json` lists the 2 remaining alerts; watch the video and mark each `true`/`false` to report false
+Smoothing cut alerts by 83% (measured with the deployed settings: confidence 0.40, water check off), the difference between an app a driver ignores and one they can use.
+`smoothing.json` lists the remaining alert; watch the video and mark each `true`/`false` to report false
 alarms per minute.
 
 ### Error analysis

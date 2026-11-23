@@ -270,6 +270,7 @@ python ml/evaluate.py latency</pre>
       <CardContent>
         <ul class="limits-list">
           <li><strong>Training data is from Indian roads.</strong> The RDD2022 India subset is the closest public match, but there is no labelled Philippine test set yet; expect lower accuracy on local farm-to-market roads until local images are added<template v-if="main?.extra_splits?.test_local"> (local test mAP@0.5 {{ num(main.extra_splits.test_local.map50) }})</template>.</li>
+          <li><strong>The pothole class is unreliable.</strong> Our audit found that most "pothole" boxes in the public training data are faded lane paint; the model found 0 of 14 real pothole photos. Crack detection is genuine.</li>
           <li><strong>Standing water is not detected automatically.</strong> Public flooded-road data is too small and inconsistent; drivers report it manually.</li>
           <li><strong>Obstructions are out of scope.</strong> People, animals, fallen trees or landslides on the road are not detected; drivers can still report a hazard manually.</li>
           <li><strong>Small or distant potholes and faint cracks are missed most often</strong> — see the size breakdown above when available.</li>

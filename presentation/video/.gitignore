@@ -1,0 +1,11 @@
+# Render scratch output (stills, logs, camera-path probes)
+out/stills/
+out/*.log
+out/*.err
+out/*.png
+out/*.json
+out/*.mjs
+# Full-quality renders are over GitHub's 100 MB limit; the *_web.mp4 copies are committed.
+out/AniRoute_ProductFilm_1080p.mp4
+out/AniRoute_ProductFilm_1080p_Tagalog.mp4
+out/AniRoute_ProductFilm_4K*.mp4

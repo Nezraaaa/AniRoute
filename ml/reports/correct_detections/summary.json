@@ -1,0 +1,158 @@
+{
+ "split": "test",
+ "images": 444,
+ "threshold": 0.4,
+ "correct_detections": 36,
+ "correct_at_or_above": {
+  "50%": 15,
+  "60%": 4,
+  "70%": 0,
+  "80%": 0,
+  "90%": 0
+ },
+ "picked": [
+  {
+   "file": "pothole_1_52.jpg",
+   "class": "pothole",
+   "best_confidence": 0.52,
+   "source": "data_002639.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "pothole",
+     "confidence": 0.52,
+     "box": [
+      411.8,
+      578.0,
+      504.9,
+      710.9
+     ]
+    }
+   ]
+  },
+  {
+   "file": "pothole_2_48.jpg",
+   "class": "pothole",
+   "best_confidence": 0.485,
+   "source": "data_002436.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "severe_road_damage",
+     "confidence": 0.585,
+     "box": [
+      0.0,
+      516.9,
+      520.6,
+      692.7
+     ]
+    },
+    {
+     "class": "pothole",
+     "confidence": 0.485,
+     "box": [
+      147.7,
+      519.7,
+      227.4,
+      581.6
+     ]
+    }
+   ]
+  },
+  {
+   "file": "pothole_3_48.jpg",
+   "class": "pothole",
+   "best_confidence": 0.483,
+   "source": "data_002648.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "pothole",
+     "confidence": 0.483,
+     "box": [
+      317.9,
+      515.9,
+      358.0,
+      593.8
+     ]
+    }
+   ]
+  },
+  {
+   "file": "severe_road_damage_1_63.jpg",
+   "class": "severe_road_damage",
+   "best_confidence": 0.633,
+   "source": "data_002507.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "severe_road_damage",
+     "confidence": 0.633,
+     "box": [
+      0.0,
+      494.7,
+      635.5,
+      688.2
+     ]
+    }
+   ]
+  },
+  {
+   "file": "severe_road_damage_2_63.jpg",
+   "class": "severe_road_damage",
+   "best_confidence": 0.626,
+   "source": "data_002650.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "severe_road_damage",
+     "confidence": 0.626,
+     "box": [
+      75.2,
+      495.0,
+      575.6,
+      713.5
+     ]
+    }
+   ]
+  },
+  {
+   "file": "severe_road_damage_3_62.jpg",
+   "class": "severe_road_damage",
+   "best_confidence": 0.617,
+   "source": "data_002672.jpg",
+   "size": [
+    720,
+    720
+   ],
+   "boxes": [
+    {
+     "class": "severe_road_damage",
+     "confidence": 0.617,
+     "box": [
+      126.3,
+      467.2,
+      718.3,
+      687.5
+     ]
+    }
+   ]
+  }
+ ],
+ "note": "Best-case examples: correct detections (IoU >= 0.5 with a hand-labelled box of the same class) on images with no false alarms. Overall test metrics are in metrics.json / high_confidence_profile.json."
+}

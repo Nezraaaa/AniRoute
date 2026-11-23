@@ -36,3 +36,6 @@ presentation/~$*
 # Local run logs and the auto-downloaded COCO weights in the repo root
 ml/*.log
 /yolo11n.pt
+
+# Local server error logs
+ml/*.err

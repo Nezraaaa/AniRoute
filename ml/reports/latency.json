@@ -4,57 +4,57 @@
       "model": "Model A",
       "format": "pt",
       "imgsz": 640,
-      "mean_ms": 50.8,
-      "p95_ms": 62.5,
-      "fps": 19.7
+      "mean_ms": 48.0,
+      "p95_ms": 51.6,
+      "fps": 20.8
     },
     {
       "model": "Model A",
       "format": "pt",
       "imgsz": 480,
-      "mean_ms": 33.8,
-      "p95_ms": 42.9,
-      "fps": 29.6
+      "mean_ms": 39.6,
+      "p95_ms": 56.9,
+      "fps": 25.3
     },
     {
       "model": "Model A",
       "format": "onnx",
       "imgsz": 640,
-      "mean_ms": 39.3,
-      "p95_ms": 41.8,
-      "fps": 25.5
+      "mean_ms": 37.0,
+      "p95_ms": 40.0,
+      "fps": 27.0
     },
     {
       "model": "Model A",
       "format": "openvino",
       "imgsz": 640,
-      "mean_ms": 37.7,
-      "p95_ms": 54.0,
-      "fps": 26.5
+      "mean_ms": 33.4,
+      "p95_ms": 45.2,
+      "fps": 30.0
     },
     {
       "model": "System (A)",
       "format": "auto",
       "imgsz": 640,
-      "mean_ms": 33.2,
-      "p95_ms": 41.1,
-      "fps": 30.2
+      "mean_ms": 32.2,
+      "p95_ms": 43.1,
+      "fps": 31.1
     }
   ],
   "system": {
     "models": "A",
-    "mean_ms": 33.2,
-    "p95_ms": 41.1,
-    "fps": 30.2,
+    "mean_ms": 32.2,
+    "p95_ms": 43.1,
+    "fps": 31.1,
     "runtime_format": "auto"
   },
   "images": 6,
-  "runs": 30,
+  "runs": 100,
   "device": "cpu",
   "machine": {
     "platform": "Windows-11-10.0.26300-SP0",
     "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
     "python": "3.12.3"
   },
-  "evaluated_at": "2026-11-23T02:06:03.163843+00:00"
+  "evaluated_at": "2026-11-23T11:34:49.616202+00:00"
 }

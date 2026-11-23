@@ -1,7 +1,7 @@
 # Defense — likely panel questions and honest answers
 
 Numbers come from `ml/reports/` (see `docs/EVALUATION.md`). Headline: test mAP@0.5 **0.278**, precision
-**0.41**, recall **0.31** on 444 held-out images; **30 FPS** end to end on the laptop CPU.
+**0.41**, recall **0.31** on 444 held-out images; **31 FPS** end to end on the laptop CPU.
 
 ## Problem and relevance
 
@@ -35,11 +35,17 @@ Model A starts from YOLO11 weights trained on COCO (118k photos). We fine-tuned 
 road-damage images (RDD2022, India subset) so its head predicts our two classes — that training is ours
 (runs E0 and E1, on a laptop CPU). Nothing else is used for detection.
 
+**6b. Can it detect potholes?**
+Not reliably yet. During our final checks we looked at the training boxes labelled "pothole" and most were
+faded lane paint, a labelling problem in the public mirror. We confirmed it by running the model on 14 real
+pothole photos: it found none. Crack detection is genuine (86% of crack alerts match a human label).
+Fix: retrain with correctly labelled potholes, checked by eye first. Evidence: `ml/reports/pothole_label_audit.md`.
+
 **7. Why only potholes and cracks? What about obstructions?**
 Road-surface damage is what bruises produce and is not in any pretrained model, so it is where training
 adds value. We built a second, COCO-pretrained model for people, animals and vehicles in the lane, but
 switched it off to keep the project focused and every reported number backed by our own test set
-(`ANIROUTE_ENABLE_OBSTRUCTION_MODEL=true` turns it back on). The detector runs in about 33 ms per frame end to end (30 FPS).
+(`ANIROUTE_ENABLE_OBSTRUCTION_MODEL=true` turns it back on). The pipeline runs in about 32 ms per frame end to end (31 FPS).
 
 **8. Explain the YOLO pipeline in 30 seconds.**
 Backbone extracts features; neck merges them at several scales; head predicts boxes, class scores and
@@ -64,7 +70,7 @@ the input away from what it learned and amplifies asphalt texture. It stays avai
 **13. Why 2 of 3 frames?**
 A single frame can show a shadow or wet patch as a pothole. Requiring the same hazard in 2 of the last 3
 analysed frames (~1.2 s) removes most one-frame false alarms for a small delay. On the 36-second demo
-drive it cut alerts from 18 (30 per minute) to 2 (3.3 per minute).
+drive it cut alerts from 6 (10 per minute) to 1 (1.7 per minute) at the 0.40 threshold.
 
 ## Evaluation
 
@@ -100,7 +106,7 @@ area differently from how the annotator split it.
 Four controlled steps, one change at a time: (1) E0 baseline, 20 epochs from COCO weights; (2) E1 longer
 training, 40 epochs with early stopping; the better run on **validation** is deployed (E1,
 val mAP@0.5 0.289 → 0.334, +16%); (3) confidence threshold tuned at max F1 on validation; (4) CLAHE
-ablation (off / auto / on) and ONNX/OpenVINO export for speed (OpenVINO 38 ms vs PyTorch 51 ms, 26% faster).
+ablation (off / auto / on) and ONNX/OpenVINO export for speed (OpenVINO 33 ms vs PyTorch 48 ms, 30% faster).
 Bigger models and higher resolution (presets E2–E4 in `train.py`) are ready but need a GPU — future work.
 
 **21. Why didn't you use automatic hyperparameter tuning?**
@@ -148,7 +154,7 @@ real deployment, evidence should be encrypted, access-controlled and deleted aft
 
 **28. Can it run on a phone?**
 The browser already uses the phone camera and sends frames to the server. For on-device inference, the
-nano model exported to ONNX/TFLite would run on recent phones; we measured 38 ms per frame on a laptop CPU.
+nano model exported to ONNX/TFLite would run on recent phones; we measured 33 ms per frame for the model on a laptop CPU.
 
 **29. What would you do with more time?**
 Local Philippine dataset and labels; standing-water and landslide classes; distance-to-hazard estimation;
