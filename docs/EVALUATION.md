@@ -82,7 +82,7 @@ at no cost. Full table: `ml/reports/optimization_table.md`; chart: `optimization
 CLAHE made the model **worse**, even on dark images. Our explanation: the model was trained on
 un-enhanced images, so CLAHE shifts the input away from what it learned, and it amplifies asphalt texture
 that then looks like cracks. The decision was made on validation (E6) and confirmed on test, so the app
-keeps CLAHE **off** by default and offers it as an option in the Vision Lab. The dark subset is small (13
+keeps CLAHE **off** by default (it stays available through the API and `ANIROUTE_CLAHE`). The dark subset is small (13
 images), so that column is indicative only. `ablation_bar.png`, `preprocessing_before_after.png`.
 
 ### Speed on the presentation laptop (AMD Ryzen, CPU only)
@@ -113,7 +113,7 @@ alarms per minute.
 
 Not measured: we did not label an obstruction test set. Model B is the unchanged COCO model, so its
 accuracy is the published COCO accuracy; our contribution is the driving-corridor rule, demonstrated on
-the sample street image in the Vision Lab. This is a stated limitation.
+the annotated sample images (`ml/reports/sample_detections/`) and in the live trip. This is a stated limitation.
 
 ### Error analysis
 

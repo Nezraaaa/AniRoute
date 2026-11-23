@@ -66,7 +66,7 @@ A trapezoid in front of the vehicle (from 40% down the frame to the bottom, wide
 width). A COCO object counts as an obstruction only if the bottom-centre of its box — where it touches
 the road — is inside, and the box is at least 12% of the frame height (close). Parked cars at the
 roadside are ignored. We did not label an obstruction test set, so this rule is a design choice we can
-demonstrate on the sample street image (Vision Lab), not a measured accuracy number — a stated limitation.
+demonstrate on the annotated sample images and in the live trip, not a measured accuracy number — a stated limitation.
 
 **13. Why 2 of 3 frames?**
 A single frame can show a shadow or wet patch as a pothole. Requiring the same hazard in 2 of the last 3

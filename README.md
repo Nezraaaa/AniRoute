@@ -10,7 +10,7 @@ Hazards seen in 2 of 3 frames alert the driver; confirmed hazards are geotagged 
 of every route that passes them, weighted by how fragile the crop is, so the app can recommend a safer
 route.
 
-![Vision Lab](presentation/screenshots/02-vision-lab.png)
+![Detections on held-out test images](ml/reports/sample_detections/test_severe_road_damage_05.jpg)
 
 ## Quick start
 
@@ -43,7 +43,6 @@ cd frontend && npm ci && npm run dev
 
 | Page | What it shows |
 | --- | --- |
-| **Vision Lab** | Upload images, a recorded drive or use the webcam; boxes, confidence, model, threshold slider, CLAHE on/off, preprocessing stages |
 | **Plan → Active trip** | Live OSRM route options scored for the crop; during the trip the camera (or a recorded drive) is analysed in real time; confirm a hazard → routes re-scored |
 | **Evaluation** | Metrics, confusion matrix, PR/F1 curves, optimisation table, CLAHE ablation, speed, error gallery, limitations — read from `ml/reports/` |
 | **About** | Problem, objectives, beneficiaries, architecture, how the detector works, limits and privacy |
@@ -76,6 +75,7 @@ python ml/evaluate.py compare     --runs ml/runs/E0 ml/runs/E1
 python ml/evaluate.py latency
 python ml/evaluate.py smoothing   --video backend/samples/demo_drive.webm
 python ml/scripts/preprocess_demo.py
+python ml/scripts/annotate_samples.py   # annotated detections for the slides
 ```
 
 ## Tests
@@ -94,7 +94,7 @@ backend/
   hazard_risk.py       confirmed hazards → route road-risk (75 m, severity × crop sensitivity)
   vision/              preprocessing, YOLO wrapper, two-model integration, smoothing, API router
   models/              aniroute-hazards-v1.pt (Model A, after training); yolo11n.pt auto-downloaded
-  samples/             sample images and recorded drive for the Vision Lab and trip
+  samples/             sample images and the recorded drive for the trip
 ml/
   run_cpu_pipeline.sh           the full CPU run used for the submitted results
   notebooks/train_colab.ipynb   optional GPU training on Colab
@@ -103,8 +103,8 @@ ml/
   evaluation/                   metrics (unit-tested), dataset reader, plots
   reports/                      every metric and figure used by the app, docs and slides
 frontend/src/
-  pages/               PlanPage, ActiveTripPage, VisionLabPage, EvaluationPage, AboutPage
-  components/vision/   DetectionOverlay, LiveVideoDetector, PreprocessStages, ConfusionMatrix
+  pages/               PlanPage, ActiveTripPage, EvaluationPage, AboutPage
+  components/vision/   DetectionOverlay, ConfusionMatrix
 docs/                  problem, system overview, dataset, model card, evaluation, demo script, defense Q&A
 presentation/          build_deck.py → AniRoute_CSST106.pptx, screenshots/
 ```
@@ -126,7 +126,7 @@ Backend environment variables (see `backend/.env.example`): `ANIROUTE_MODEL_PATH
 
 All data is live: road geometry and ETA come from OSRM, place search from Nominatim (OpenStreetMap), and
 road risk from camera-confirmed hazards. Route planning and map tiles therefore need an internet connection;
-the Vision Lab and Evaluation pages work offline. Weather and flood feeds are not connected.
+the Evaluation page works offline. Weather and flood feeds are not connected.
 
 ## Credits and licences
 

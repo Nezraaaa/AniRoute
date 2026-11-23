@@ -38,7 +38,6 @@ onBeforeUnmount(() => window.clearInterval(healthTimer))
         <RouterLink :to="store.state.activeRouteId ? '/trip/active' : '/'" class="app-nav-link" :class="{ 'app-nav-link-active': $route.name === 'plan' || $route.name === 'active-trip' }">
           {{ store.state.activeRouteId ? 'Trip' : 'Plan' }}
         </RouterLink>
-        <RouterLink to="/vision" class="app-nav-link" active-class="app-nav-link-active">Vision Lab</RouterLink>
         <RouterLink to="/evaluation" class="app-nav-link" active-class="app-nav-link-active">Evaluation</RouterLink>
         <RouterLink to="/about" class="app-nav-link" active-class="app-nav-link-active">About</RouterLink>
       </nav>

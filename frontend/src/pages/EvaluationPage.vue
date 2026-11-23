@@ -204,7 +204,7 @@ python ml/evaluate.py latency</pre>
               <tr v-for="key in ['without_roi', 'with_roi']" :key="key"><td>{{ key === 'with_roi' ? 'With corridor rule' : 'Without rule' }}</td><td>{{ pct(modelB.results[key]?.precision) }}</td><td>{{ pct(modelB.results[key]?.recall) }}</td><td>{{ num(modelB.results[key]?.f1) }}</td><td>{{ modelB.results[key]?.fp }}</td></tr>
             </tbody>
           </table>
-          <p v-else class="lab-muted">Model B accuracy not measured: we did not label an obstruction test set. It is the unchanged COCO model; the driving-corridor rule is demonstrated on the street sample in the Vision Lab.</p>
+          <p v-else class="lab-muted">Model B accuracy not measured: we did not label an obstruction test set. It is the unchanged COCO model; the driving-corridor rule is shown on the annotated sample images and during the live trip.</p>
           <p v-if="smoothing" class="eval-stat-line">
             Drive “{{ smoothing.video }}” ({{ smoothing.duration_s }} s): <strong>{{ smoothing.without_smoothing.alerts_per_minute }}</strong> alerts/min without smoothing →
             <strong>{{ smoothing.with_smoothing.alerts_per_minute }}</strong> with {{ smoothing.with_smoothing.min_hits }}-of-{{ smoothing.with_smoothing.window }} voting.

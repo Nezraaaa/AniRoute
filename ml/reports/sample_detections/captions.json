@@ -1,0 +1,9 @@
+{
+  "street_bus_pedestrians.jpg": "road obstruction 94%, road obstruction 83%, severe road damage 34%",
+  "test_pothole_02.jpg": "pothole 26%",
+  "test_pothole_06.jpg": "pothole 33%",
+  "test_severe_road_damage_01.jpg": "severe road damage 30%",
+  "test_severe_road_damage_03.jpg": "severe road damage 26%, pothole 17%",
+  "test_severe_road_damage_04.jpg": "severe road damage 17%",
+  "test_severe_road_damage_05.jpg": "road obstruction 64%, severe road damage 52%"
+}

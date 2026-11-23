@@ -184,7 +184,7 @@ select.field-control {
 .legend-line { width: 20px; height: 4px; border-radius: 5px; }
 .legend-optimal { background: #126448; }
 .legend-safer { background: #2563eb; }
-.legend-fastest { background: #e4572e; }
+.legend-fastest { background: #f97316; }
 .legend-alternative { background: #6b7280; }
 .map-attribution { margin: 8px 14px 12px; color: #778278; font-size: 10px; line-height: 1.4; }
 .map-attribution-links { color: #66746a; }
@@ -237,8 +237,8 @@ select.field-control {
 .route-floating-close:focus-visible { outline: 3px solid rgba(37, 114, 79, .25); outline-offset: 2px; }
 .route-floating-content { padding: 2px 16px 14px; }
 .route-category-mark { width: 13px; height: 13px; flex: 0 0 auto; margin-top: 2px; border: 3px solid #126448; border-radius: 50%; }
-.mark-safer { border-color: #28724f; }
-.mark-fastest { border-color: #b45318; }
+.mark-safer { border-color: #2563eb; }
+.mark-fastest { border-color: #f97316; }
 .mark-alternative { border-color: #6b7280; }
 .route-card-title { margin: 0; color: #242e26; font-family: var(--font-display); font-size: 15px; font-weight: 700; line-height: 1.25; }
 .route-short-reason { margin: 3px 0 0; color: #69756b; font-size: 11px; line-height: 1.3; }

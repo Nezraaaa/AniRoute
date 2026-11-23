@@ -22,6 +22,7 @@ from pptx.util import Emu, Inches, Pt
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "ml" / "reports"
 SHOTS = ROOT / "presentation" / "screenshots"
+DETECTIONS = ROOT / "ml" / "reports" / "sample_detections"
 LOGO = ROOT / "frontend" / "src" / "assets" / "aniroute-logo.png"
 OUT = ROOT / "presentation" / "AniRoute_CSST106.pptx"
 
@@ -192,7 +193,7 @@ text(s, Inches(0.8), Inches(2.9), Inches(6.2), Inches(1.4),
      "Real-time road-hazard detection for crop-aware farm-to-market delivery", size=24, color=RGBColor(0xDC, 0xEC, 0xE0))
 text(s, Inches(0.8), Inches(5.9), Inches(6), Inches(0.5), "Computer vision · YOLO object detection · Agriculture & transportation",
      size=13, color=RGBColor(0x9C, 0xC9, 0xAE))
-crop_picture(s, SHOTS / "02-vision-lab.png", Inches(7.4), Inches(1.0), Inches(5.4), Inches(5.5), top_fraction=0.18)
+picture(s, DETECTIONS / "test_severe_road_damage_05.jpg", Inches(7.4), Inches(1.0), Inches(5.4), Inches(5.5))
 notes(s, "Team names. One sentence: AniRoute uses a phone or dashcam to detect road hazards with YOLO and re-routes "
          "perishable harvests away from them.")
 
@@ -283,8 +284,6 @@ title(s, "Preprocessing: original vs processed", "Preprocessing")
 before_after = REPORTS / "preprocessing_before_after.png"
 if before_after.exists():
     picture(s, before_after, Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.2))
-else:
-    crop_picture(s, SHOTS / "02-vision-lab.png", Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.2), top_fraction=0.63)
 text(s, Inches(0.6), Inches(6.8), Inches(12), Inches(0.5),
      "Orientation fix  ·  letterbox to 640 × 640 (no stretching)  ·  CLAHE tested, off by default (it lowered mAP)", size=14, color=MUTED)
 notes(s, "CLAHE equalises the histogram per 8×8 tile with a clip limit of 2.0, on the LAB lightness channel only, so colours "
@@ -320,21 +319,19 @@ notes(s, "One-stage detector: one forward pass. Transfer learning: keep the back
 # 9 Implementation
 s = prs.slides.add_slide(BLANK)
 title(s, "The working application", "System implementation")
-crop_picture(s, SHOTS / "02-vision-lab.png", Inches(0.6), Inches(1.5), Inches(6.3), Inches(5.4), top_fraction=0.0)
+crop_picture(s, SHOTS / "01-plan.png", Inches(0.6), Inches(1.5), Inches(6.3), Inches(5.4), top_fraction=0.0)
 crop_picture(s, SHOTS / "05-active-trip.png", Inches(7.1), Inches(1.5), Inches(5.6), Inches(5.4), top_fraction=0.0)
-notes(s, "Vision Lab: image, video and webcam with boxes, threshold slider and CLAHE toggle. Active trip: the camera or "
+notes(s, "Plan: live routes scored for crop fragility and confirmed hazards. Active trip: the camera or "
          "recorded drive is scanned; confirmed hazards re-score routes. Stack: Vue 3, FastAPI, OpenCV, Ultralytics.")
 
 # 10 Results
 s = prs.slides.add_slide(BLANK)
 title(s, "Detections on images the model never saw", "Results")
-gallery_tp = sorted((ROOT / "backend" / "samples").glob("test_*.jpg"))[:3]
-if gallery_tp:
-    for index, path in enumerate(gallery_tp):
-        picture(s, path, Inches(0.6 + index * 4.1), Inches(1.6), Inches(3.9), Inches(4.6))
-    text(s, Inches(0.6), Inches(6.4), Inches(12), Inches(0.5), "Held-out test images — run them live in the Vision Lab.", size=13, color=MUTED)
-else:
-    crop_picture(s, SHOTS / "02-vision-lab.png", Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.3), top_fraction=0.22)
+shown = [DETECTIONS / name for name in ("test_severe_road_damage_05.jpg", "test_pothole_06.jpg", "street_bus_pedestrians.jpg")]
+for index, path in enumerate(p for p in shown if p.exists()):
+    picture(s, path, Inches(0.6 + index * 4.1), Inches(1.6), Inches(3.9), Inches(4.6))
+text(s, Inches(0.6), Inches(6.4), Inches(12), Inches(0.5),
+     "Real output of the deployed model: road damage (Model A), obstructions inside the purple driving corridor (Model B).", size=13, color=MUTED)
 notes(s, "Point at class, confidence and model. Mention the obstruction example uses the pretrained model and the corridor rule.")
 
 # 11 Evaluation
@@ -402,7 +399,7 @@ notes(s, "White = ground truth, yellow frame = the error. Explain the cause of e
 s = prs.slides.add_slide(BLANK)
 background(s, GREEN_DARK)
 text(s, Inches(0.8), Inches(2.6), Inches(11.7), Inches(1.2), "Live demonstration", size=48, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-text(s, Inches(0.8), Inches(3.9), Inches(11.7), Inches(0.8), "Vision Lab  →  recorded drive  →  plan  →  active trip  →  confirm  →  re-route  →  evaluation",
+text(s, Inches(0.8), Inches(3.9), Inches(11.7), Inches(0.8), "Plan  →  active trip  →  recorded drive  →  detect  →  confirm  →  re-route  →  evaluation",
      size=18, color=RGBColor(0xDC, 0xEC, 0xE0), align=PP_ALIGN.CENTER)
 notes(s, "Follow docs/DEMO_SCRIPT.md. Backup: screenshots in presentation/screenshots/.")
 

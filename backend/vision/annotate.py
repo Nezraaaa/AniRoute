@@ -1,4 +1,4 @@
-"""Draw detection boxes for evidence frames and the Vision Lab result image."""
+"""Draw detection boxes for evidence frames and annotated sample images."""
 from __future__ import annotations
 
 import cv2

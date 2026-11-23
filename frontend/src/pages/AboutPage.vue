@@ -98,7 +98,7 @@ const beneficiaries = [
           <p>
             <strong>Why CLAHE?</strong> Contrast Limited Adaptive Histogram Equalisation brightens dark regions tile by tile while
             limiting noise, on lightness only. We measured it rather than assumed it: on our road images it lowered accuracy, so it is
-            off by default and kept as an option in the Vision Lab.
+            off by default.
           </p>
         </CardContent>
       </Card>

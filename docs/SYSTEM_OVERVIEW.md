@@ -60,7 +60,7 @@ flowchart TD
 | Smoothing | `backend/vision/smoothing.py` | 2-of-3 voting, cooldown, 50 m dedupe |
 | API | `backend/vision/router.py`, `backend/main.py` | `/api/vision/*`, `/api/model/*`, `/api/hazards/*`, `/api/routes/*` |
 | Route risk | `backend/hazard_risk.py` | Point-to-route distance, severity weights, crop multiplier |
-| Web app | `frontend/src/pages/*`, `components/vision/*` | Vision Lab, Active Trip scanning, Evaluation, About |
+| Web app | `frontend/src/pages/*`, `components/vision/*` | Plan, Active Trip scanning, Evaluation, About |
 | Training & evaluation | `ml/` | Dataset preparation, training presets, metrics, figures |
 
 ## API summary

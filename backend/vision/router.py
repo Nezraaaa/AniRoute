@@ -1,4 +1,4 @@
-"""HTTP endpoints for the computer-vision service (Vision Lab, model info, reports)."""
+"""HTTP endpoints for the computer-vision service (detection, model info, reports)."""
 from __future__ import annotations
 
 import json

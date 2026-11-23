@@ -122,7 +122,7 @@ export interface ApiErrorShape {
 }
 
 // ---------------------------------------------------------------------------
-// Computer vision (Vision Lab, live scanning, evaluation reports)
+// Computer vision (live scanning, evaluation reports)
 // ---------------------------------------------------------------------------
 export type ClaheMode = 'auto' | 'on' | 'off'
 export type DetectionModel = 'A' | 'B'

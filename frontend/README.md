@@ -16,8 +16,6 @@ Pages:
   live route options from OSRM scored for crop sensitivity and camera-confirmed road hazards.
 - **Active trip** — the camera (or a recorded drive) is analysed by the backend detector; hazards seen in
   2 of 3 frames are shown to the driver, confirmed with GPS and evidence, and routes are re-scored.
-- **Vision Lab** — run the detector on images, video and the webcam; preprocessing stages; threshold and
-  CLAHE controls.
 - **Evaluation** — metrics, confusion matrix, curves, optimisation table and error analysis from
   `ml/reports/`.
 - **About** — problem, objectives, architecture, how the detector works, limitations.

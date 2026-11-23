@@ -29,7 +29,7 @@ watch(() => props.selected, selected => {
 
 const categoryText: Record<RouteCategory, string> = {
   optimal: 'Optimal · Best balance',
-  safer: 'Safer route',
+  safer: 'Safest route',
   fastest: 'Fastest route',
   alternative: 'Alternative route',
 }

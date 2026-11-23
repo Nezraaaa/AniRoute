@@ -1,4 +1,4 @@
-"""Create the browser-playable recorded drive used in the trip page and the Vision Lab.
+"""Create the browser-playable recorded drive used in the trip page.
 
   # Best: your own phone/dashcam recording of a local road (trimmed to ~30 s)
   python ml/scripts/make_demo_video.py --video my_drive.mp4 --start 5 --duration 30

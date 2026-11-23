@@ -512,7 +512,7 @@ app.add_middleware(
     expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
 )
 app.include_router(vision_router)
-# Report images (confusion matrix, curves, error gallery) and sample media for the Vision Lab.
+# Report images (confusion matrix, curves, error gallery) and sample media (recorded drive for the trip page).
 app.mount("/reports", StaticFiles(directory=str(REPORTS_DIR), check_dir=False), name="reports")
 app.mount("/samples", StaticFiles(directory=str(SAMPLES_DIR), check_dir=False), name="samples")
 

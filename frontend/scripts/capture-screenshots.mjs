@@ -45,16 +45,6 @@ async function run(viewport, suffix) {
   await page.waitForTimeout(1500)
   await shoot(page, `01-plan${suffix}`)
 
-  await page.goto(`${appUrl}/vision`, { waitUntil: 'networkidle' })
-  await page.waitForSelector('.lab-model-status', { timeout: 15000 })
-  const sample = page.locator('.sample-chip').first()
-  if (await sample.count()) {
-    await sample.click()
-    await page.waitForSelector('.detection-box, .lab-muted, .lab-error', { timeout: 30000 }).catch(() => undefined)
-    await page.waitForTimeout(800)
-  }
-  await shoot(page, `02-vision-lab${suffix}`, { fullPage: true })
-
   await page.goto(`${appUrl}/evaluation`, { waitUntil: 'networkidle' })
   await page.waitForTimeout(1200)
   await shoot(page, `03-evaluation${suffix}`, { fullPage: true })

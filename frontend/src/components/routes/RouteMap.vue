@@ -30,11 +30,11 @@ let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
 
-const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e', alternative: '#6b7280' }
+const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#f97316', alternative: '#6b7280' }
 const routeLayerDefinitions = [
   { category: 'optimal' as const, sourceId: 'route-optimal-source', casingId: 'route-optimal-casing', layerId: 'route-optimal', color: '#0b7a54', offset: 0 },
   { category: 'safer' as const, sourceId: 'route-safer-source', casingId: 'route-safer-casing', layerId: 'route-safer', color: '#2563eb', offset: 0 },
-  { category: 'fastest' as const, sourceId: 'route-fastest-source', casingId: 'route-fastest-casing', layerId: 'route-fastest', color: '#e4572e', offset: 0 },
+  { category: 'fastest' as const, sourceId: 'route-fastest-source', casingId: 'route-fastest-casing', layerId: 'route-fastest', color: '#f97316', offset: 0 },
   { category: 'alternative' as const, sourceId: 'route-alternative-source', casingId: 'route-alternative-casing', layerId: 'route-alternative', color: '#6b7280', offset: 0 },
 ]
 
@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="routes.length" class="map-legend" aria-label="Route color legend">
       <span v-if="legendCategories.has('optimal')"><i class="legend-line legend-optimal"></i> Recommended route</span>
-      <span v-if="legendCategories.has('safer')"><i class="legend-line legend-safer"></i> Safer route</span>
+      <span v-if="legendCategories.has('safer')"><i class="legend-line legend-safer"></i> Safest route</span>
       <span v-if="legendCategories.has('fastest')"><i class="legend-line legend-fastest"></i> Fastest route</span>
       <span v-if="legendCategories.has('alternative')"><i class="legend-line legend-alternative"></i> Alternative route</span>
       <span class="map-legend-credit">Road directions by OSRM</span>

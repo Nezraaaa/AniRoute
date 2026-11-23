@@ -32,7 +32,7 @@ describe('RouteOptionCard', () => {
 
     expect(wrapper.emitted('select')).toEqual([[route.id]])
     expect(wrapper.emitted('use')).toEqual([[route.id]])
-    expect(wrapper.text()).toContain('Safer route')
+    expect(wrapper.text()).toContain('Safest route')
     expect(wrapper.text()).toContain('Crop')
     expect(wrapper.findAll('.risk-factor-high')).toHaveLength(3)
     expect(wrapper.findAll('.risk-factor-low')).toHaveLength(1)
