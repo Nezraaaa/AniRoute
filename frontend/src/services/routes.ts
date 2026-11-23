@@ -48,7 +48,7 @@ function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
     roadConditionSummary: route.road_condition_summary,
     cropRiskScore: route.crop_risk_score,
     cropRiskLabel: route.crop_risk_label,
-    riskFactors: route.risk_factors ?? { travelTime: 0, distance: 0, crop: 0, road: 0 },
+    riskFactors: route.risk_factors ?? { travelTime: 0, distance: 0, crop: 0, road: 0, safety: 0 },
     cropProfileSummary: route.crop_profile_summary ?? 'Crop sensitivity is included in the route score.',
     explanation: route.explanation,
     recommended: route.recommended,

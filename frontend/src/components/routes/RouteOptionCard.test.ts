@@ -12,7 +12,7 @@ const route: RouteOption = {
   roadConditionSummary: 'No camera-confirmed road hazards on this route yet.',
   cropRiskScore: 38,
   cropRiskLabel: 'moderate',
-  riskFactors: { travelTime: 68, distance: 62, crop: 65, road: 8 },
+  riskFactors: { travelTime: 68, distance: 62, crop: 65, road: 8, safety: 8 },
   cropProfileSummary: 'Live score for Tomatoes.',
   explanation: 'Longer, with no confirmed road hazards.',
   recommended: false,

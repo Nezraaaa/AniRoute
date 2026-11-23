@@ -137,6 +137,15 @@ A confirmed hazard is saved with GPS. Every route that passes within 75 m gets a
 (pothole 12, standing water 20, severe damage 25, obstruction 30, capped at 100), multiplied by crop
 sensitivity, and routes are re-ranked. These weights are heuristics, not validated loss values.
 
+**26b. How do you choose the Recommended, Fastest and Safest routes?**
+OSRM gives the road options (we add detours on each side when it returns only one, and keep them only if
+they are genuinely different roads). *Fastest* = least travel time. *Safest* = lowest road-safety risk,
+measured from each road's geometry: bends per km (resampled every 50 m; switchbacks bruise produce),
+intersections per km (stop-and-go braking) and camera-confirmed hazards. *Recommended* = best balance of
+time, distance, crop fragility and road safety. When one road wins several, the cards say "same road":
+for Baguio → Calamba the direct road is fastest *and* safest, so we do not invent a different one. The
+weights are transparent heuristics, not measured accident rates.
+
 **27. Privacy?**
 Frames are processed in memory and discarded; only the frame the driver confirms is stored with GPS. In a
 real deployment, evidence should be encrypted, access-controlled and deleted after a set period.

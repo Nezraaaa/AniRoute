@@ -68,13 +68,13 @@ def test_live_calculation_returns_provider_geometry_and_api_source(monkeypatch: 
     assert result["recommended_route_id"] == "route-1"
     assert next(route for route in result["routes"] if route["recommended"])["category"] == "optimal"
     assert result["routes"]
-    assert all(route["category"] in {"optimal", "safer", "fastest", "alternative"} for route in result["routes"])
+    assert all(route["category"] in {"optimal", "fastest", "safer", "alternative"} for route in result["routes"])
     assert result["routes"][0]["geometry"]["coordinates"] == live_provider_routes()[0]["geometry"]["coordinates"]
     assert result["routes"][0]["travel_time_minutes"] == 60
     assert result["routes"][0]["distance_km"] == 90
     assert result["routes"][0]["risk_factors"]["road"] == 0
     factors = result["routes"][0]["risk_factors"]
-    assert set(factors) == {"travelTime", "distance", "crop", "road"}
+    assert set(factors) == {"travelTime", "distance", "crop", "road", "safety"}
     assert factors["travelTime"] > 0 and factors["distance"] > 0 and factors["crop"] > 0   # real values, never placeholders
 
 

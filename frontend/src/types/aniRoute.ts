@@ -1,4 +1,4 @@
-export type RouteCategory = 'optimal' | 'safer' | 'fastest' | 'alternative'
+export type RouteCategory = 'optimal' | 'fastest' | 'safer' | 'alternative'
 export type HazardType = 'pothole' | 'severe_road_damage' | 'standing_water' | 'road_obstruction'
 export type RiskLevel = 'lower' | 'moderate' | 'higher'
 export type DataSource = 'api'
@@ -64,6 +64,7 @@ export interface RouteOption {
     distance: number
     crop: number
     road: number
+    safety: number
   }
   cropProfileSummary: string
   explanation: string

@@ -19,6 +19,39 @@ const formPanel = ref<HTMLElement | null>(null)
 const generalError = ref('')
 const displayRoutes = computed(() => mergeDuplicateRoutes(store.routes))
 
+type OptionKey = 'optimal' | 'fastest' | 'safer'
+const optionOrder: OptionKey[] = ['optimal', 'fastest', 'safer']
+const selectedOption = ref<OptionKey>('optimal')
+
+// Always three choices: Recommended, Fastest, Safest. Each points at the road that truly wins that
+// category; when one road wins several, the card says it is the same road instead of inventing one.
+const routeOptions = computed(() => {
+  const roads = displayRoutes.value
+  if (!roads.length) return []
+  const winner = (key: OptionKey) => roads.find(road => (road.categories ?? [road.category]).includes(key))
+    ?? roads.find(road => road.recommended) ?? roads[0]!
+  const recommended = winner('optimal')
+  const fastest = winner('fastest')
+  return optionOrder.map(key => {
+    const road = winner(key)
+    const sameRoadAs: 'recommended' | 'fastest' | null = key === 'optimal' ? null
+      : road.id === recommended.id ? 'recommended'
+        : key === 'safer' && road.id === fastest.id ? 'fastest' : null
+    return { key, road, sameRoadAs, card: { ...road, category: key, recommended: key === 'optimal' } as RouteOption }
+  })
+})
+
+// The map draws the selected road in the selected option's colour (green, orange or blue).
+const mapRoutes = computed(() => store.routes.map(route => (
+  route.id === store.state.selectedRouteId ? { ...route, category: selectedOption.value } : route)))
+
+function selectOption(key: OptionKey, roadId: string) {
+  selectedOption.value = key
+  selectRoute(roadId)
+}
+
+watch(() => store.routes.map(route => route.id).join(), () => { selectedOption.value = 'optimal' })
+
 function routeRequestTrip() {
   return {
     ...store.trip,
@@ -193,7 +226,7 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
             <p class="eyebrow">Trip options</p>
             <h2 id="compare-heading">Compare routes</h2>
           </div>
-          <span v-if="displayRoutes.length" class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} {{ displayRoutes.length === 1 ? 'option' : 'options' }}</span>
+          <span v-if="routeOptions.length" class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ routeOptions.length }} options</span>
         </div>
 
         <Alert v-if="generalError" variant="danger" class="integration-error-banner" role="alert">
@@ -227,13 +260,14 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
 
             <div v-else class="route-list">
               <RouteOptionCard
-                v-for="route in displayRoutes"
-                :key="route.id"
-                :route="route"
-                :selected="store.state.selectedRouteId === route.id"
+                v-for="option in routeOptions"
+                :key="option.key"
+                :route="option.card"
+                :same-road-as="option.sameRoadAs"
+                :selected="selectedOption === option.key && store.state.selectedRouteId === option.road.id"
                 :crop="store.trip.crop"
                 :loading="store.state.loadingRoutes"
-                @select="selectRoute"
+                @select="selectOption(option.key, $event)"
                 @use="useRoute"
               />
             </div>
@@ -242,7 +276,7 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
 
         <div class="map-column">
           <RouteMap
-            :routes="store.routes"
+            :routes="mapRoutes"
             :selected-route-id="store.state.selectedRouteId"
             :trip="store.trip"
             :origin-coordinates="store.state.originCoordinates"

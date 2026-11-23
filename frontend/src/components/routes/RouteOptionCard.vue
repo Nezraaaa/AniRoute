@@ -11,6 +11,8 @@ const props = defineProps<{
   selected: boolean
   crop: string
   loading?: boolean
+  /** This option uses the same road as another option (e.g. the recommended road is also the fastest). */
+  sameRoadAs?: 'recommended' | 'fastest' | null
 }>()
 const emit = defineEmits<{
   select: [id: string]
@@ -28,7 +30,7 @@ watch(() => props.selected, selected => {
 })
 
 const categoryText: Record<RouteCategory, string> = {
-  optimal: 'Optimal · Best balance',
+  optimal: 'Recommended route',
   safer: 'Safest route',
   fastest: 'Fastest route',
   alternative: 'Alternative route',
@@ -39,13 +41,15 @@ const riskText = {
   higher: 'Higher known transport concern',
 }
 
+// Categories this road also wins besides its main one (e.g. the recommended road is also the fastest).
+const extraWins = computed(() => (props.route.categories ?? [])
+  .filter((win): win is 'fastest' | 'safer' => (win === 'fastest' || win === 'safer') && win !== props.route.category))
+
 const shortReason = computed(() => {
-  const wins = new Set(props.route.categories ?? [props.route.category])
+  if (props.sameRoadAs) return `Same road as the ${props.sameRoadAs} route`
   if (props.route.category === 'alternative') return `Different road · +${props.route.extraMinutes} min vs fastest`
-  const also = [wins.has('fastest') && props.route.category !== 'fastest' ? 'fastest' : '', wins.has('safer') && props.route.category !== 'safer' ? 'lowest risk' : ''].filter(Boolean)
-  const base = props.route.category === 'optimal' ? 'Best balance for this crop and load'
-    : props.route.category === 'safer' ? 'Lowest road-hazard exposure' : 'Shortest estimated travel time'
-  return also.length ? `${base} · also ${also.join(' and ')}` : base
+  return props.route.category === 'optimal' ? 'Best balance of time, distance, crop and road hazards'
+    : props.route.category === 'fastest' ? 'Shortest estimated travel time' : 'Fewest curves, stops and confirmed hazards'
 })
 
 function factorSeverity(value: number) {
@@ -76,6 +80,9 @@ function factorLabel(name: string, value: number) {
           <span :class="['route-category-mark', `mark-${route.category}`]" aria-hidden="true"></span>
           <div>
             <h4 class="route-card-title">{{ categoryText[route.category] }}</h4>
+            <span v-if="extraWins.length && !sameRoadAs" class="route-win-chips">
+              <span v-for="win in extraWins" :key="win" :class="['route-win-chip', `route-win-chip-${win}`]">{{ win === 'fastest' ? 'Fastest' : 'Safest' }}</span>
+            </span>
             <p class="route-short-reason">{{ shortReason }}</p>
           </div>
         </div>
@@ -145,7 +152,7 @@ function factorLabel(name: string, value: number) {
           <span :class="`risk-factor-${factorSeverity(route.riskFactors.travelTime)}`" :aria-label="factorLabel('Time', route.riskFactors.travelTime)"><strong>{{ route.riskFactors.travelTime }}</strong> Time</span>
           <span :class="`risk-factor-${factorSeverity(route.riskFactors.distance)}`" :aria-label="factorLabel('Distance', route.riskFactors.distance)"><strong>{{ route.riskFactors.distance }}</strong> Distance</span>
           <span :class="`risk-factor-${factorSeverity(route.riskFactors.crop)}`" :aria-label="factorLabel('Crop fragility', route.riskFactors.crop)"><strong>{{ route.riskFactors.crop }}</strong> Crop</span>
-          <span :class="`risk-factor-${factorSeverity(route.riskFactors.road)}`" :aria-label="factorLabel('Road hazards', route.riskFactors.road)"><strong>{{ route.riskFactors.road }}</strong> Road</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.safety)}`" :aria-label="factorLabel('Road safety risk', route.riskFactors.safety)"><strong>{{ route.riskFactors.safety }}</strong> Road</span>
         </div>
         <p class="crop-profile-summary">{{ route.cropProfileSummary }}</p>
         <p v-if="route.explanation" class="route-explanation">{{ route.explanation }}</p>

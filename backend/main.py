@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 try:  # imported as `backend.main` (tests, `uvicorn backend.main:app`)
-    from . import hazard_risk
+    from . import hazard_risk, road_safety
     from .vision.config import REPORTS_DIR, SAMPLES_DIR
     from .vision.ensemble import get_detector
     from .vision.preprocess import ImageDecodeError, decode_data_url, encode_jpeg_data_url
@@ -27,6 +27,7 @@ try:  # imported as `backend.main` (tests, `uvicorn backend.main:app`)
     from .vision.router import get_hazard_filter, router as vision_router, run_detection
 except ImportError:  # run from inside backend/ (`uvicorn main:app`)
     import hazard_risk  # type: ignore[no-redef]
+    import road_safety  # type: ignore[no-redef]
     from vision.config import REPORTS_DIR, SAMPLES_DIR  # type: ignore[no-redef]
     from vision.ensemble import get_detector  # type: ignore[no-redef]
     from vision.preprocess import ImageDecodeError, decode_data_url, encode_jpeg_data_url  # type: ignore[no-redef]
@@ -230,7 +231,7 @@ def _request_routing_routes(stops: list[Coordinates], alternatives: bool = True)
         "alternatives": "true" if alternatives else "false",
         "overview": "full",
         "geometries": "geojson",
-        "steps": "false",
+        "steps": "true",   # intersections per step feed the road-safety score
     }
     try:
         with httpx.Client(
@@ -374,6 +375,7 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
         if len(clean_coordinates) < 2 or duration <= 0 or distance <= 0:
             continue
         candidates.append({
+            "raw": raw_route,
             "coordinates": clean_coordinates,
             "duration_minutes": max(1, float(duration) / 60),
             "distance_km": float(distance) / 1000,
@@ -390,6 +392,8 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
     observations = hazard_risk.load_observations(DATA_DIR / "hazard_observations.jsonl")
     for route in candidates:
         route["road_factor"], route["hazard_pins"] = hazard_risk.assess_route(route["coordinates"], observations)
+        # Road safety for produce: curves, stop-and-go and confirmed hazards (road_safety.py).
+        route.update(road_safety.assess(route["coordinates"], route["raw"], route["distance_km"], route["road_factor"]))
         route["time_factor"] = _clamp((route["duration_minutes"] / minimum_duration - 1) * 100)
         route["distance_factor"] = _clamp((route["distance_km"] / minimum_distance - 1) * 100)
         # Breakdown shown to the driver: absolute exposure of this trip, so every factor has a real value.
@@ -398,17 +402,19 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
         route["crop_fragility"] = _crop_fragility(trip.crop)
         route["crop_risk_score"] = _clamp(
             route["time_exposure"] * 0.30 + route["distance_exposure"] * 0.15 + route["crop_fragility"] * 0.25
-            + route["road_factor"] * 0.5 * crop_road_multiplier,
+            + route["safety_risk"] * 0.5 * crop_road_multiplier,
         )
         route["combined_score"] = (
             (route["time_factor"] * 0.5) + (route["distance_factor"] * 0.25) + (route["crop_risk_score"] * 0.25)
-            + route["road_factor"] * 0.6 * crop_road_multiplier
+            + route["safety_risk"] * 0.6 * crop_road_multiplier
         )
 
     fastest_index = min(range(len(candidates)), key=lambda index: (candidates[index]["duration_minutes"], index))
-    safer_index = min(range(len(candidates)), key=lambda index: (candidates[index]["crop_risk_score"], candidates[index]["duration_minutes"], index))
+    safest_index = min(range(len(candidates)), key=lambda index: (candidates[index]["safety_risk"], candidates[index]["duration_minutes"], index))
     optimal_index = min(range(len(candidates)), key=lambda index: (candidates[index]["combined_score"], index))
-    category_indexes = {"optimal": optimal_index, "safer": safer_index, "fastest": fastest_index}
+    # Recommended = best balance of time, distance, crop fragility and road safety; fastest = least time;
+    # safest = fewest curves, stops and confirmed hazards. One road can win several (it then carries each label).
+    category_indexes = {"optimal": optimal_index, "fastest": fastest_index, "safer": safest_index}
     route_categories: dict[int, list[str]] = {}
     for category, index in category_indexes.items():
         route_categories.setdefault(index, []).append(category)
@@ -416,8 +422,8 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
     route_data: list[dict] = []
     for index, candidate in enumerate(candidates):
         categories = route_categories.get(index, [])
-        category = ("optimal" if "optimal" in categories else "safer" if "safer" in categories
-                    else "fastest" if "fastest" in categories else "alternative")
+        category = ("optimal" if "optimal" in categories else "fastest" if "fastest" in categories
+                    else "safer" if "safer" in categories else "alternative")
         # Stable id per provider route, so the active trip keeps pointing at the same road
         # geometry even when a confirmed hazard changes which route is "optimal".
         route_id = f"route-{index + 1}"
@@ -430,8 +436,9 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
             "travel_time_minutes": max(1, round(candidate["duration_minutes"])),
             "distance_km": round(candidate["distance_km"], 1),
             "road_condition_summary": (
-                f"{hazard_summary} (AniRoute camera, driver-confirmed)." if hazard_summary
-                else "No camera-confirmed road hazards on this route yet."
+                (f"{hazard_summary} (AniRoute camera, driver-confirmed). " if hazard_summary
+                 else "No camera-confirmed road hazards yet. ")
+                + f"Curves {candidate['curves_deg_per_km']:.0f}°/km · {candidate['intersections_per_km']:.1f} intersections/km."
             ),
             "crop_risk_score": candidate["crop_risk_score"],
             "crop_risk_label": _risk_label(candidate["crop_risk_score"]),
@@ -440,8 +447,9 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
                 "distance": candidate["distance_exposure"],
                 "crop": candidate["crop_fragility"],
                 "road": candidate["road_factor"],
+                "safety": candidate["safety_risk"],
             },
-            "crop_profile_summary": "Score = 30% time on the road + 15% distance + 25% crop fragility + confirmed road hazards. A transport-risk guide, not a spoilage percentage.",
+            "crop_profile_summary": "Score = 30% time on the road + 15% distance + 25% crop fragility + road safety (curves, stop-and-go, confirmed hazards). A transport-risk guide, not a spoilage percentage.",
             "explanation": (
                 f"{hazard_summary}. Each confirmed hazard within 75 m of the route raises its road factor."
                 if hazard_summary else ""

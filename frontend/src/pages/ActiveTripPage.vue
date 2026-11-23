@@ -69,7 +69,7 @@ function updateDraggedPoint(field: 'origin' | 'destination', coordinates: Coordi
 }
 
 const categoryLabels: Record<RouteCategory, string> = {
-  optimal: 'Optimal route', safer: 'Safest route', fastest: 'Fastest route', alternative: 'Alternative route',
+  optimal: 'Recommended route', fastest: 'Fastest route', safer: 'Safest route', alternative: 'Alternative route',
 }
 const supportedHazardsText = computed(() => {
   const supported = scannerStatus.value?.supportedHazards ?? []
@@ -220,7 +220,7 @@ function switchToNewRoute() {
   store.state.activeRouteId = next
   store.state.selectedRouteId = next
   store.state.newRecommendedRouteId = null
-  successMessage.value = `Now using the ${categoryLabels[store.routes.find(item => item.id === next)?.category ?? 'safer'].toLowerCase()}.`
+  successMessage.value = `Now using the ${categoryLabels[store.routes.find(item => item.id === next)?.category ?? 'optimal'].toLowerCase()}.`
 }
 
 function stopAnalysis(routeId: string | null) {
@@ -315,7 +315,7 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
           <CardHeader>
             <div class="flex items-start justify-between gap-3">
               <div><CardTitle>Trip estimate</CardTitle><CardDescription>Live route estimate</CardDescription></div>
-              <Badge variant="outline">{{ route.category === 'optimal' ? 'Optimal' : route.category === 'safer' ? 'Safest' : route.category === 'fastest' ? 'Fastest' : 'Alternative' }}</Badge>
+              <Badge variant="outline">{{ route.category === 'optimal' ? 'Recommended' : route.category === 'fastest' ? 'Fastest' : route.category === 'safer' ? 'Safest' : 'Alternative' }}</Badge>
             </div>
           </CardHeader>
           <CardContent>

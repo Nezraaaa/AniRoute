@@ -29,8 +29,14 @@ const draggedPoints = ref<{ origin: [number, number] | null; destinations: Recor
 let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
+// Active trip camera, like turn-by-turn directions: 'follow' = tilted 3D view behind the vehicle,
+// 'overview' = the whole route from above. Dragging the map switches to overview until Follow is pressed.
+const cameraMode = ref<'follow' | 'overview'>('follow')
+const NAV_ZOOM = 16.5
+const NAV_PITCH = 60
+const LOOK_AHEAD_KM = 0.2
 
-const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#f97316', alternative: '#6b7280' }
+const categoryColors: Record<string, string> = { optimal: '#0b7a54', fastest: '#f97316', safer: '#2563eb', alternative: '#6b7280' }
 const routeLayerDefinitions = [
   { category: 'optimal' as const, sourceId: 'route-optimal-source', casingId: 'route-optimal-casing', layerId: 'route-optimal', color: '#0b7a54', offset: 0 },
   { category: 'safer' as const, sourceId: 'route-safer-source', casingId: 'route-safer-casing', layerId: 'route-safer', color: '#2563eb', offset: 0 },
@@ -84,7 +90,7 @@ function routeGeoJson() {
         category: route.category,
         color: categoryColors[route.category],
         selected: route.id === props.selectedRouteId,
-        sortOrder: route.id === props.selectedRouteId ? 10 : route.category === 'optimal' ? 3 : route.category === 'safer' ? 2 : 1,
+        sortOrder: route.id === props.selectedRouteId ? 10 : route.category === 'optimal' ? 3 : route.category === 'fastest' ? 2 : 1,
       },
       geometry: { ...route.geometry, coordinates: routeCoordinates(route) },
     })),
@@ -268,6 +274,8 @@ function createMarkers(shouldFitBounds = true) {
   if (props.currentLocation) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
   if (!boundPoints.length || !shouldFitBounds) return
 
+  if (props.active && cameraMode.value === 'follow' && followCamera(instance)) return
+
   const bounds = new LngLatBounds(boundPoints[0], boundPoints[0])
   for (const point of boundPoints) bounds.extend(point)
   if (shouldFitBounds) {
@@ -275,11 +283,58 @@ function createMarkers(shouldFitBounds = true) {
     instance.fitBounds(bounds, {
       padding: { top: 96, bottom: 48, left: 64, right: 72 },
       maxZoom: 14,
-      pitch: props.active ? 38 : 0,
-      bearing: props.active ? -12 : 0,
-      duration: 250,
+      pitch: 0,
+      bearing: 0,
+      duration: props.active ? 800 : 250,
     })
   }
+}
+
+function distanceKm(a: MapPoint, b: MapPoint) {
+  const toRad = Math.PI / 180
+  const h = Math.sin((b[1] - a[1]) * toRad / 2) ** 2
+    + Math.cos(a[1] * toRad) * Math.cos(b[1] * toRad) * Math.sin((b[0] - a[0]) * toRad / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+
+function bearingDeg(a: MapPoint, b: MapPoint) {
+  const toRad = Math.PI / 180
+  const y = Math.sin((b[0] - a[0]) * toRad) * Math.cos(b[1] * toRad)
+  const x = Math.cos(a[1] * toRad) * Math.sin(b[1] * toRad) - Math.sin(a[1] * toRad) * Math.cos(b[1] * toRad) * Math.cos((b[0] - a[0]) * toRad)
+  return Math.atan2(y, x) / toRad
+}
+
+/** Tilted 3D camera at the vehicle (or the route start), turned to face the road ahead. */
+function followCamera(instance: MapInstance): boolean {
+  const route = routeLines().find(item => item.id === props.selectedRouteId) ?? routeLines()[0]
+  const line = route ? routeCoordinates(route) : []
+  const vehicle = pointFromCoordinates(props.currentLocation)
+  const anchor = vehicle ?? line[0] ?? selectedMapPoints().origin
+  if (!anchor) return false
+  let bearing = instance.getBearing()
+  if (line.length > 1) {
+    // Nearest point of the route to the vehicle, then the point ~200 m further along it.
+    let nearest = 0
+    let best = Infinity
+    line.forEach((point, index) => {
+      const d = distanceKm(anchor, point)
+      if (d < best) { best = d; nearest = index }
+    })
+    let travelled = 0
+    let ahead = line[Math.min(nearest + 1, line.length - 1)]!
+    for (let index = nearest; index < line.length - 1 && travelled < LOOK_AHEAD_KM; index += 1) {
+      travelled += distanceKm(line[index]!, line[index + 1]!)
+      ahead = line[index + 1]!
+    }
+    if (distanceKm(anchor, ahead) > 0.005) bearing = bearingDeg(anchor, ahead)
+  }
+  instance.easeTo({ center: anchor, zoom: NAV_ZOOM, pitch: NAV_PITCH, bearing, duration: 1200, essential: true })
+  return true
+}
+
+function setCameraMode(mode: 'follow' | 'overview') {
+  cameraMode.value = mode
+  createMarkers(true)
 }
 
 function resetToNeutralView(instance: MapInstance) {
@@ -430,6 +485,8 @@ async function initializeMap() {
     map.value = instance
     instance.addControl(new NavigationControl({ showCompass: true }), 'top-right')
     const syncMapLayers = () => markStyleReady(instance)
+    // Panning by hand during a trip pauses following (like a navigation app) until Follow is pressed.
+    instance.on('dragstart', () => { if (props.active) cameraMode.value = 'overview' })
     instance.on('style.load', syncMapLayers)
     instance.on('load', syncMapLayers)
     instance.on('error', () => {
@@ -474,6 +531,10 @@ onBeforeUnmount(() => {
         <span>Route choices remain available below.</span>
       </div>
       <div v-if="!unavailable && !mapReady" class="map-loading" role="status">Loading map…</div>
+      <div v-if="active && mapReady" class="map-camera-toggle" role="group" aria-label="Map view">
+        <button type="button" :class="{ active: cameraMode === 'follow' }" :aria-pressed="cameraMode === 'follow'" @click="setCameraMode('follow')">3D follow</button>
+        <button type="button" :class="{ active: cameraMode === 'overview' }" :aria-pressed="cameraMode === 'overview'" @click="setCameraMode('overview')">Overview</button>
+      </div>
       <div v-if="!unavailable && mapReady && !hasMapSelection && !currentLocation && !routeLines().length" class="map-empty-state" role="status">
         <MapPin :size="19" aria-hidden="true" />
         <div>
