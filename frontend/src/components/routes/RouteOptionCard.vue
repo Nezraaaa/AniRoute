@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { ChevronDown, Clock3, CloudRain, MapPin, ShieldCheck, Thermometer, Truck, X } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import { ChevronDown, Clock3, MapPin, ShieldCheck, Truck, X } from '@lucide/vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -31,12 +31,22 @@ const categoryText: Record<RouteCategory, string> = {
   optimal: 'Optimal · Best balance',
   safer: 'Safer route',
   fastest: 'Fastest route',
+  alternative: 'Alternative route',
 }
 const riskText = {
   lower: 'Lower known transport concern',
   moderate: 'Some known transport concern',
   higher: 'Higher known transport concern',
 }
+
+const shortReason = computed(() => {
+  const wins = new Set(props.route.categories ?? [props.route.category])
+  if (props.route.category === 'alternative') return `Different road · +${props.route.extraMinutes} min vs fastest`
+  const also = [wins.has('fastest') && props.route.category !== 'fastest' ? 'fastest' : '', wins.has('safer') && props.route.category !== 'safer' ? 'lowest risk' : ''].filter(Boolean)
+  const base = props.route.category === 'optimal' ? 'Best balance for this crop and load'
+    : props.route.category === 'safer' ? 'Lowest road-hazard exposure' : 'Shortest estimated travel time'
+  return also.length ? `${base} · also ${also.join(' and ')}` : base
+})
 
 function factorSeverity(value: number) {
   if (value >= 55) return 'high'
@@ -66,7 +76,7 @@ function factorLabel(name: string, value: number) {
           <span :class="['route-category-mark', `mark-${route.category}`]" aria-hidden="true"></span>
           <div>
             <h4 class="route-card-title">{{ categoryText[route.category] }}</h4>
-            <p class="route-short-reason">{{ route.category === 'optimal' ? 'Best balance for this crop and load' : route.category === 'safer' ? 'Lowest road and flood exposure' : 'Shortest estimated travel time' }}</p>
+            <p class="route-short-reason">{{ shortReason }}</p>
           </div>
         </div>
         <span class="route-header-actions">
@@ -122,14 +132,6 @@ function factorLabel(name: string, value: number) {
             <Truck :size="16" aria-hidden="true" />
             <div><span class="detail-label">Road</span><strong>{{ route.roadConditionSummary }}</strong></div>
           </div>
-          <div class="route-detail">
-            <CloudRain :size="16" aria-hidden="true" />
-            <div><span class="detail-label">Weather and flood</span><strong>{{ route.weatherFloodSummary }}</strong></div>
-          </div>
-          <div class="route-detail">
-            <Thermometer :size="16" aria-hidden="true" />
-            <div><span class="detail-label">Temperature exposure</span><strong>{{ route.temperatureSummary }}</strong></div>
-          </div>
           <div class="route-detail route-detail-risk">
             <ShieldCheck :size="16" aria-hidden="true" />
             <div>
@@ -142,13 +144,11 @@ function factorLabel(name: string, value: number) {
         <div class="risk-breakdown" aria-label="Risk score factors">
           <span :class="`risk-factor-${factorSeverity(route.riskFactors.travelTime)}`" :aria-label="factorLabel('Time', route.riskFactors.travelTime)"><strong>{{ route.riskFactors.travelTime }}</strong> Time</span>
           <span :class="`risk-factor-${factorSeverity(route.riskFactors.distance)}`" :aria-label="factorLabel('Distance', route.riskFactors.distance)"><strong>{{ route.riskFactors.distance }}</strong> Distance</span>
-          <span :class="`risk-factor-${factorSeverity(route.riskFactors.road)}`" :aria-label="factorLabel('Road', route.riskFactors.road)"><strong>{{ route.riskFactors.road }}</strong> Road</span>
-          <span :class="`risk-factor-${factorSeverity(route.riskFactors.floodWeather)}`" :aria-label="factorLabel('Flood', route.riskFactors.floodWeather)"><strong>{{ route.riskFactors.floodWeather }}</strong> Flood</span>
-          <span :class="`risk-factor-${factorSeverity(route.riskFactors.temperature)}`" :aria-label="factorLabel('Heat', route.riskFactors.temperature)"><strong>{{ route.riskFactors.temperature }}</strong> Heat</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.crop)}`" :aria-label="factorLabel('Crop fragility', route.riskFactors.crop)"><strong>{{ route.riskFactors.crop }}</strong> Crop</span>
+          <span :class="`risk-factor-${factorSeverity(route.riskFactors.road)}`" :aria-label="factorLabel('Road hazards', route.riskFactors.road)"><strong>{{ route.riskFactors.road }}</strong> Road</span>
         </div>
         <p class="crop-profile-summary">{{ route.cropProfileSummary }}</p>
-        <p class="route-explanation">{{ route.explanation }}</p>
-        <p class="route-score-note">Interpretable transport risk score · not a spoilage percentage.</p>
+        <p v-if="route.explanation" class="route-explanation">{{ route.explanation }}</p>
       </div>
       <div class="route-actions">
         <Button class="w-full" size="lg" :disabled="loading" @click="emit('use', route.id)">Use this route</Button>

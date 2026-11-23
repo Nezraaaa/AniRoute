@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowRight, Info, Pencil, Route as RouteIcon } from '@lucide/vue'
+import { Info, Pencil, Route as RouteIcon } from '@lucide/vue'
 import DeliveryForm from '@/components/delivery/DeliveryForm.vue'
 import RouteMap from '@/components/routes/RouteMap.vue'
 import RouteOptionCard from '@/components/routes/RouteOptionCard.vue'
@@ -185,10 +185,6 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
           @location-selected="handleLocationSelected"
           @location-cleared="handleLocationCleared"
         />
-        <div class="crop-guidance">
-          <Info :size="17" aria-hidden="true" />
-          <p>Route risk is a guide from travel time, distance, crop sensitivity and camera-confirmed road hazards. It is not a freshness or spoilage prediction.</p>
-        </div>
       </aside>
 
       <section class="results-column" aria-labelledby="compare-heading">
@@ -197,16 +193,8 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
             <p class="eyebrow">Trip options</p>
             <h2 id="compare-heading">Compare routes</h2>
           </div>
-          <span class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} options</span>
+          <span class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} {{ displayRoutes.length === 1 ? 'option' : 'options' }}</span>
         </div>
-
-        <Alert variant="default" class="route-info-banner">
-          <Info :size="18" aria-hidden="true" />
-          <div>
-            <strong>Crop-aware route analysis</strong>
-            <p>Road geometry and travel time come from OSRM. Scores combine travel time, distance, crop sensitivity and road hazards confirmed by AniRoute's camera. Weather and flood feeds are not connected yet.</p>
-          </div>
-        </Alert>
 
         <Alert v-if="generalError" variant="danger" class="integration-error-banner" role="alert">
           <Info :size="18" aria-hidden="true" />
@@ -262,7 +250,6 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
             :delivery-point-coordinates="store.state.deliveryPointCoordinates"
             @point-dragged="setPointCoordinates"
           />
-          <div class="selection-tip"><ArrowRight :size="16" aria-hidden="true" /> Choose any route above. The map follows your selection.</div>
         </div>
       </section>
     </div>

@@ -223,11 +223,11 @@ def _resolve_trip_stops(trip: TripInput) -> list[Coordinates]:
     return stops
 
 
-def _request_routing_routes(stops: list[Coordinates]) -> list[dict]:
+def _request_routing_routes(stops: list[Coordinates], alternatives: bool = True) -> list[dict]:
     coordinate_path = ";".join(f"{point.longitude:.6f},{point.latitude:.6f}" for point in stops)
     url = f"{ROUTING_URL}/route/v1/{ROUTING_PROFILE}/{coordinate_path}"
     params = {
-        "alternatives": "true",
+        "alternatives": "true" if alternatives else "false",
         "overview": "full",
         "geometries": "geojson",
         "steps": "false",
@@ -261,6 +261,82 @@ def _request_routing_routes(stops: list[Coordinates]) -> list[dict]:
     return [route for route in raw_routes if isinstance(route, dict)]
 
 
+# OSRM often returns a single route for long trips. To still offer real choices, we also route through a
+# detour point on each side of the direct line (fractions of the trip length) and keep only genuinely
+# different roads: no out-and-back spurs, little overlap with routes we already have, not absurdly slow.
+VIA_OFFSETS = (0.08, -0.08, -0.15, 0.15, 0.04, -0.04)
+MAX_ALTERNATIVE_SLOWDOWN = 1.6
+MAX_SHARED_FRACTION = 0.9
+TARGET_ROUTES = 3
+
+
+def _route_points(raw_route: dict) -> list[tuple[float, float]]:
+    geometry = raw_route.get("geometry")
+    coordinates = geometry.get("coordinates") if isinstance(geometry, dict) else None
+    if not isinstance(coordinates, list):
+        return []
+    return [(round(float(p[0]), 3), round(float(p[1]), 3)) for p in coordinates
+            if isinstance(p, (list, tuple)) and len(p) >= 2 and isinstance(p[0], (int, float)) and isinstance(p[1], (int, float))]
+
+
+def _has_spur(points: list[tuple[float, float]]) -> bool:
+    """A detour that drives out to the via point and back retraces the same road: repeated points."""
+    path = [point for index, point in enumerate(points) if index == 0 or point != points[index - 1]]
+    return len(path) > 10 and (len(path) - len(set(path))) / len(path) > 0.03
+
+
+def _shared_fraction(points: list[tuple[float, float]], others: list[set]) -> float:
+    if not points or not others:
+        return 0.0
+    unique = set(points)
+    return max(len(unique & other) / len(unique) for other in others)
+
+
+def _with_detour_alternatives(stops: list[Coordinates], raw_routes: list[dict]) -> list[dict]:
+    if len(stops) != 2 or len(raw_routes) >= TARGET_ROUTES:
+        return raw_routes
+    durations = [r["duration"] for r in raw_routes if isinstance(r.get("duration"), (int, float))]
+    if not durations:
+        return raw_routes
+    fastest = min(durations)
+    kept = list(raw_routes)
+    point_sets = [set(_route_points(r)) for r in kept]
+    start, end = stops
+    dx, dy = end.longitude - start.longitude, end.latitude - start.latitude
+    length = (dx ** 2 + dy ** 2) ** 0.5
+    if length < 0.05:   # under ~5 km: detours make no sense
+        return raw_routes
+    nx, ny = -dy / length, dx / length
+    mid_lon, mid_lat = (start.longitude + end.longitude) / 2, (start.latitude + end.latitude) / 2
+    for offset in VIA_OFFSETS:
+        if len(kept) >= TARGET_ROUTES:
+            break
+        via = Coordinates(latitude=mid_lat + ny * length * offset, longitude=mid_lon + nx * length * offset)
+        try:
+            candidates = _request_routing_routes([start, via, end], alternatives=False)
+        except HTTPException:
+            continue
+        for candidate in candidates[:1]:
+            points = _route_points(candidate)
+            duration = candidate.get("duration")
+            if (not isinstance(duration, (int, float)) or duration > fastest * MAX_ALTERNATIVE_SLOWDOWN
+                    or _has_spur(points) or _shared_fraction(points, point_sets) > MAX_SHARED_FRACTION):
+                continue
+            kept.append(candidate)
+            point_sets.append(set(points))
+    return kept
+
+
+# Absolute exposure scales for the score breakdown (0-100): 8 h on the road or 500 km = 100.
+TIME_EXPOSURE_FULL_MINUTES = 480
+DISTANCE_EXPOSURE_FULL_KM = 500
+
+
+def _crop_fragility(crop: str) -> int:
+    """0-100: how easily the crop bruises or wilts in transport (heuristic, not a measured loss rate)."""
+    return {12: 90, 8: 65, 4: 30}[_crop_sensitivity(crop)]
+
+
 def _crop_sensitivity(crop: str) -> int:
     if re.search(r"leafy|lettuce|pechay|spinach|herb", crop, re.IGNORECASE):
         return 12
@@ -278,7 +354,7 @@ def _live_routes(trip: TripInput) -> dict:
         raise HTTPException(status_code=503, detail="Live route engine is disabled. Set ANIROUTE_LIVE_ROUTING_ENABLED=true.")
 
     stops = _resolve_trip_stops(trip)
-    raw_routes = _request_routing_routes(stops)
+    raw_routes = _with_detour_alternatives(stops, _request_routing_routes(stops))
     candidates: list[dict] = []
     for raw_route in raw_routes[:3]:
         geometry = raw_route.get("geometry")
@@ -316,8 +392,12 @@ def _live_routes(trip: TripInput) -> dict:
         route["road_factor"], route["hazard_pins"] = hazard_risk.assess_route(route["coordinates"], observations)
         route["time_factor"] = _clamp((route["duration_minutes"] / minimum_duration - 1) * 100)
         route["distance_factor"] = _clamp((route["distance_km"] / minimum_distance - 1) * 100)
+        # Breakdown shown to the driver: absolute exposure of this trip, so every factor has a real value.
+        route["time_exposure"] = _clamp(route["duration_minutes"] / TIME_EXPOSURE_FULL_MINUTES * 100)
+        route["distance_exposure"] = _clamp(route["distance_km"] / DISTANCE_EXPOSURE_FULL_KM * 100)
+        route["crop_fragility"] = _crop_fragility(trip.crop)
         route["crop_risk_score"] = _clamp(
-            14 + (route["time_factor"] * 0.42) + (route["distance_factor"] * 0.34) + crop_shift
+            route["time_exposure"] * 0.30 + route["distance_exposure"] * 0.15 + route["crop_fragility"] * 0.25
             + route["road_factor"] * 0.5 * crop_road_multiplier,
         )
         route["combined_score"] = (
@@ -336,7 +416,8 @@ def _live_routes(trip: TripInput) -> dict:
     route_data: list[dict] = []
     for index, candidate in enumerate(candidates):
         categories = route_categories.get(index, [])
-        category = "optimal" if "optimal" in categories else "safer" if "safer" in categories else "fastest"
+        category = ("optimal" if "optimal" in categories else "safer" if "safer" in categories
+                    else "fastest" if "fastest" in categories else "alternative")
         # Stable id per provider route, so the active trip keeps pointing at the same road
         # geometry even when a confirmed hazard changes which route is "optimal".
         route_id = f"route-{index + 1}"
@@ -352,33 +433,32 @@ def _live_routes(trip: TripInput) -> dict:
                 f"{hazard_summary} (AniRoute camera, driver-confirmed)." if hazard_summary
                 else "No camera-confirmed road hazards on this route yet."
             ),
-            "weather_flood_summary": "Live weather and flood feeds are not connected yet.",
-            "temperature_exposure_summary": "Live temperature feed is not connected yet.",
             "crop_risk_score": candidate["crop_risk_score"],
             "crop_risk_label": _risk_label(candidate["crop_risk_score"]),
             "risk_factors": {
-                "travelTime": candidate["time_factor"],
-                "distance": candidate["distance_factor"],
+                "travelTime": candidate["time_exposure"],
+                "distance": candidate["distance_exposure"],
+                "crop": candidate["crop_fragility"],
                 "road": candidate["road_factor"],
-                "floodWeather": 0,
-                "temperature": 0,
             },
-            "crop_profile_summary": f"Live score for {trip.crop}: travel time, distance, crop sensitivity and camera-confirmed road hazards. Weather, flood and temperature feeds are pending.",
+            "crop_profile_summary": "Score = 30% time on the road + 15% distance + 25% crop fragility + confirmed road hazards. A transport-risk guide, not a spoilage percentage.",
             "explanation": (
-                f"{hazard_summary}. Each confirmed hazard within 75 m of the route raises its road-risk factor."
-                if hazard_summary else
-                "Live route geometry and ETA come from the configured road-routing service. The crop-risk score uses travel time, distance, crop sensitivity and any camera-confirmed road hazards."
+                f"{hazard_summary}. Each confirmed hazard within 75 m of the route raises its road factor."
+                if hazard_summary else ""
             ),
             "recommended": index == optimal_index,
+            "extra_minutes": max(0, round(candidate["duration_minutes"] - minimum_duration)),
             "known_hazards": candidate["hazard_pins"],
         })
 
+    # Recommended first, then the others from fastest to slowest (ids stay tied to the provider route).
+    route_data.sort(key=lambda route: (not route["recommended"], route["travel_time_minutes"]))
     recommended_route = next(route for route in route_data if route["recommended"])
     return {
         "routes": route_data,
         "data_source": "api",
         "recommended_route_id": recommended_route["route_id"],
-        "message": "Live road geometry and ETA returned by the OSRM routing service, scored with camera-confirmed road hazards. Weather, flood and temperature feeds are not connected yet.",
+        "message": "Live road geometry and ETA from OSRM, scored with camera-confirmed road hazards.",
     }
 
 

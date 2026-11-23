@@ -185,6 +185,7 @@ select.field-control {
 .legend-optimal { background: #126448; }
 .legend-safer { background: #2563eb; }
 .legend-fastest { background: #e4572e; }
+.legend-alternative { background: #6b7280; }
 .map-attribution { margin: 8px 14px 12px; color: #778278; font-size: 10px; line-height: 1.4; }
 .map-attribution-links { color: #66746a; }
 .map-attribution-links a { color: #496b55; font-weight: 700; text-underline-offset: 2px; }
@@ -238,6 +239,7 @@ select.field-control {
 .route-category-mark { width: 13px; height: 13px; flex: 0 0 auto; margin-top: 2px; border: 3px solid #126448; border-radius: 50%; }
 .mark-safer { border-color: #28724f; }
 .mark-fastest { border-color: #b45318; }
+.mark-alternative { border-color: #6b7280; }
 .route-card-title { margin: 0; color: #242e26; font-family: var(--font-display); font-size: 15px; font-weight: 700; line-height: 1.25; }
 .route-short-reason { margin: 3px 0 0; color: #69756b; font-size: 11px; line-height: 1.3; }
 .route-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 13px 0 12px; padding: 10px 0; border-top: 1px solid #eef0eb; border-bottom: 1px solid #eef0eb; }

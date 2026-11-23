@@ -10,12 +10,11 @@ interface ApiRoute {
   travel_time_minutes: number
   distance_km: number
   road_condition_summary: string
-  weather_flood_summary: string
-  temperature_exposure_summary: string
   crop_risk_score: number | null
   crop_risk_label: RouteOption['cropRiskLabel']
   explanation: string
   recommended: boolean
+  extra_minutes?: number
   known_hazards: Array<{
     id: string
     name: string
@@ -47,14 +46,13 @@ function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
     travelTimeMinutes: route.travel_time_minutes,
     distanceKm: route.distance_km,
     roadConditionSummary: route.road_condition_summary,
-    weatherFloodSummary: route.weather_flood_summary,
-    temperatureSummary: route.temperature_exposure_summary,
     cropRiskScore: route.crop_risk_score,
     cropRiskLabel: route.crop_risk_label,
-    riskFactors: route.risk_factors ?? { travelTime: 0, distance: 0, road: 0, floodWeather: 0, temperature: 0 },
+    riskFactors: route.risk_factors ?? { travelTime: 0, distance: 0, crop: 0, road: 0 },
     cropProfileSummary: route.crop_profile_summary ?? 'Crop sensitivity is included in the route score.',
     explanation: route.explanation,
     recommended: route.recommended,
+    extraMinutes: route.extra_minutes ?? 0,
     knownHazards: (route.known_hazards ?? []).map(hazard => ({
       id: hazard.id, name: hazard.name, coordinates: hazard.coordinates, note: hazard.note, hazardType: hazard.hazard_type,
     })),

@@ -10,14 +10,13 @@ const route: RouteOption = {
   travelTimeMinutes: 365,
   distanceKm: 356.9,
   roadConditionSummary: 'No camera-confirmed road hazards on this route yet.',
-  weatherFloodSummary: 'Live weather and flood feeds are not connected yet.',
-  temperatureSummary: 'Live temperature feed is not connected yet.',
   cropRiskScore: 38,
   cropRiskLabel: 'moderate',
-  riskFactors: { travelTime: 68, distance: 62, road: 8, floodWeather: 10, temperature: 20 },
+  riskFactors: { travelTime: 68, distance: 62, crop: 65, road: 8 },
   cropProfileSummary: 'Live score for Tomatoes.',
   explanation: 'Longer, with no confirmed road hazards.',
   recommended: false,
+  extraMinutes: 0,
   knownHazards: [],
   source: 'api',
 }
@@ -34,8 +33,8 @@ describe('RouteOptionCard', () => {
     expect(wrapper.emitted('select')).toEqual([[route.id]])
     expect(wrapper.emitted('use')).toEqual([[route.id]])
     expect(wrapper.text()).toContain('Safer route')
-    expect(wrapper.text()).toContain('Temperature exposure')
-    expect(wrapper.findAll('.risk-factor-high')).toHaveLength(2)
-    expect(wrapper.findAll('.risk-factor-low')).toHaveLength(3)
+    expect(wrapper.text()).toContain('Crop')
+    expect(wrapper.findAll('.risk-factor-high')).toHaveLength(3)
+    expect(wrapper.findAll('.risk-factor-low')).toHaveLength(1)
   })
 })

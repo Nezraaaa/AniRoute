@@ -7,13 +7,15 @@ import { getJson } from '@/services/api'
 import { appConfig } from '@/services/config'
 
 const store = useAniRouteStore()
-const serviceStatus = ref<'checking' | 'ready' | 'no-detector' | 'offline'>('checking')
+const serviceStatus = ref<'checking' | 'starting' | 'ready' | 'no-detector' | 'offline'>('checking')
 let healthTimer: number | undefined
 
 async function checkHealth() {
   try {
-    const health = await getJson<{ status: string; live_hazard_detection?: boolean }>(appConfig.paths.health, 4_000)
-    serviceStatus.value = health.live_hazard_detection ? 'ready' : 'no-detector'
+    const health = await getJson<{ status: string; live_hazard_detection?: boolean; vision_warming_up?: boolean }>(appConfig.paths.health, 4_000)
+    serviceStatus.value = health.live_hazard_detection ? 'ready' : health.vision_warming_up ? 'starting' : 'no-detector'
+    // While the models load, check again soon instead of waiting for the 20 s interval.
+    if (serviceStatus.value === 'starting') window.setTimeout(checkHealth, 3_000)
   } catch {
     serviceStatus.value = 'offline'
   }
@@ -42,10 +44,10 @@ onBeforeUnmount(() => window.clearInterval(healthTimer))
       </nav>
       <div class="topbar-actions" aria-live="polite">
         <Badge
-          :variant="serviceStatus === 'ready' ? 'default' : serviceStatus === 'checking' ? 'secondary' : 'warning'"
+          :variant="serviceStatus === 'ready' ? 'default' : serviceStatus === 'checking' || serviceStatus === 'starting' ? 'secondary' : 'warning'"
           class="topbar-badge"
         >
-          {{ serviceStatus === 'ready' ? 'Detector online' : serviceStatus === 'no-detector' ? 'No detection model loaded' : serviceStatus === 'offline' ? 'Backend offline' : 'Connecting…' }}
+          {{ serviceStatus === 'ready' ? 'Detector online' : serviceStatus === 'no-detector' ? 'No detection model loaded' : serviceStatus === 'offline' ? 'Backend offline' : serviceStatus === 'starting' ? 'Detector starting…' : 'Connecting…' }}
         </Badge>
       </div>
     </header>

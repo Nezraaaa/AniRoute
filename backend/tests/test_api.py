@@ -68,12 +68,14 @@ def test_live_calculation_returns_provider_geometry_and_api_source(monkeypatch: 
     assert result["recommended_route_id"] == "route-1"
     assert next(route for route in result["routes"] if route["recommended"])["category"] == "optimal"
     assert result["routes"]
-    assert all(route["category"] in {"optimal", "safer", "fastest"} for route in result["routes"])
+    assert all(route["category"] in {"optimal", "safer", "fastest", "alternative"} for route in result["routes"])
     assert result["routes"][0]["geometry"]["coordinates"] == live_provider_routes()[0]["geometry"]["coordinates"]
     assert result["routes"][0]["travel_time_minutes"] == 60
     assert result["routes"][0]["distance_km"] == 90
     assert result["routes"][0]["risk_factors"]["road"] == 0
-    assert "not connected yet" in result["message"]
+    factors = result["routes"][0]["risk_factors"]
+    assert set(factors) == {"travelTime", "distance", "crop", "road"}
+    assert factors["travelTime"] > 0 and factors["distance"] > 0 and factors["crop"] > 0   # real values, never placeholders
 
 
 def test_live_recalculation_keeps_live_source(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
@@ -180,3 +182,25 @@ def test_hazard_requires_both_coordinates_or_neither():
             hazard_type="standing_water", detected_at="2026-09-20T12:30:00Z",
             latitude=6.42, route_id="fastest", road_segment_id="fastest-segment-2",
         )
+
+
+def test_detour_alternatives_keep_real_roads_and_reject_spurs(monkeypatch: pytest.MonkeyPatch):
+    start = main.Coordinates(latitude=16.40, longitude=120.60)
+    end = main.Coordinates(latitude=14.21, longitude=121.16)
+    direct = {"duration": 3_600, "distance": 90_000,
+              "geometry": {"coordinates": [[120.60 + i * 0.056, 16.40 - i * 0.219] for i in range(11)]}}
+    west = {"duration": 4_000, "distance": 95_000,
+            "geometry": {"coordinates": [[120.50 + i * 0.066, 16.40 - i * 0.219] for i in range(11)]}}
+    # Drives out to the via point and back the same way: a spur, not a real alternative.
+    spur_path = [[120.60 + i * 0.01, 15.30] for i in range(12)]
+    spur = {"duration": 4_100, "distance": 99_000, "geometry": {"coordinates": spur_path + spur_path[::-1] + spur_path}}
+    too_slow = {"duration": 9_000, "distance": 200_000,
+                "geometry": {"coordinates": [[121.30 + i * 0.01, 16.0 - i * 0.2] for i in range(11)]}}
+    replies = iter([[spur], [west], [too_slow], [west]])
+    monkeypatch.setattr(main, "_request_routing_routes", lambda stops, alternatives=True: next(replies, []))
+
+    routes = main._with_detour_alternatives([start, end], [direct])
+
+    assert routes[0] is direct
+    assert west in routes and spur not in routes and too_slow not in routes
+    assert routes.count(west) == 1   # the same road found twice is kept once

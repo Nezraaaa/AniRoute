@@ -19,7 +19,7 @@ describe('route service adapter', () => {
       route_id: 'optimal', category: 'optimal',
       geometry: { type: 'LineString', coordinates: [[120.596, 16.402], [121.17, 14.21]] },
       travel_time_minutes: 52, distance_km: 30.2,
-      road_condition_summary: 'Mostly smooth', weather_flood_summary: 'Low sample exposure', temperature_exposure_summary: 'Mild sample exposure',
+      road_condition_summary: 'Mostly smooth',
       crop_risk_score: 25, crop_risk_label: 'lower', explanation: 'Balances this trip.',
       recommended: true, known_hazards: [],
     }
@@ -61,7 +61,7 @@ describe('route service adapter', () => {
       route_id: 'safer', category: 'safer',
       geometry: { type: 'LineString', coordinates: [[120.596, 16.402], [121.17, 14.21]] },
       travel_time_minutes: 66, distance_km: 37.8,
-      road_condition_summary: 'Fewer rough sections', weather_flood_summary: 'Lower sample exposure', temperature_exposure_summary: 'Lower sample exposure',
+      road_condition_summary: 'Fewer rough sections',
       crop_risk_score: 20, crop_risk_label: 'lower', explanation: 'Lower known risk.',
       recommended: true, known_hazards: [],
     }

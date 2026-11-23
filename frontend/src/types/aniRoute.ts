@@ -1,4 +1,4 @@
-export type RouteCategory = 'optimal' | 'safer' | 'fastest'
+export type RouteCategory = 'optimal' | 'safer' | 'fastest' | 'alternative'
 export type HazardType = 'pothole' | 'severe_road_damage' | 'standing_water' | 'road_obstruction'
 export type RiskLevel = 'lower' | 'moderate' | 'higher'
 export type DataSource = 'api'
@@ -57,20 +57,18 @@ export interface RouteOption {
   travelTimeMinutes: number
   distanceKm: number
   roadConditionSummary: string
-  weatherFloodSummary: string
-  temperatureSummary: string
   cropRiskScore: number | null
   cropRiskLabel: RiskLevel
   riskFactors: {
     travelTime: number
     distance: number
+    crop: number
     road: number
-    floodWeather: number
-    temperature: number
   }
   cropProfileSummary: string
   explanation: string
   recommended: boolean
+  extraMinutes: number
   knownHazards: HazardPin[]
   source: DataSource
 }

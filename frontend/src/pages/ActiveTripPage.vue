@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowRight, Camera, Check, Clock3, CloudRain, Crosshair, Film, MapPin, Navigation, ShieldCheck, Truck } from '@lucide/vue'
+import { ArrowRight, Camera, Check, Clock3, Crosshair, Film, MapPin, Navigation, ShieldCheck, Truck } from '@lucide/vue'
 import Alert from '@/components/ui/Alert.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
@@ -69,7 +69,7 @@ function updateDraggedPoint(field: 'origin' | 'destination', coordinates: Coordi
 }
 
 const categoryLabels: Record<RouteCategory, string> = {
-  optimal: 'Optimal route', safer: 'Safer route', fastest: 'Fastest route',
+  optimal: 'Optimal route', safer: 'Safer route', fastest: 'Fastest route', alternative: 'Alternative route',
 }
 const supportedHazardsText = computed(() => {
   const supported = scannerStatus.value?.supportedHazards ?? []
@@ -315,7 +315,7 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
           <CardHeader>
             <div class="flex items-start justify-between gap-3">
               <div><CardTitle>Trip estimate</CardTitle><CardDescription>Live route estimate</CardDescription></div>
-              <Badge variant="outline">{{ route.category === 'optimal' ? 'Optimal' : route.category === 'safer' ? 'Safer' : 'Fastest' }}</Badge>
+              <Badge variant="outline">{{ route.category === 'optimal' ? 'Optimal' : route.category === 'safer' ? 'Safer' : route.category === 'fastest' ? 'Fastest' : 'Alternative' }}</Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -397,8 +397,8 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
 
         <Card class="road-condition-card">
           <CardContent class="road-condition-content">
-            <CloudRain :size="19" aria-hidden="true" />
-            <div><span class="detail-label">Road and weather</span><strong>{{ route.roadConditionSummary }}</strong><p>{{ route.weatherFloodSummary }} · {{ route.temperatureSummary }}</p></div>
+            <Truck :size="19" aria-hidden="true" />
+            <div><span class="detail-label">Road</span><strong>{{ route.roadConditionSummary }}</strong></div>
           </CardContent>
         </Card>
       </aside>

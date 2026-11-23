@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, createVNode, onBeforeUnmount, onMounted, ref, render, shallowRef, watch } from 'vue'
 import type { GeoJSONSource, LayerSpecification, Map as MapInstance, Marker as MapMarker, StyleSpecification } from 'maplibre-gl'
-import { MapPin, Move } from '@lucide/vue'
+import { MapPin } from '@lucide/vue'
 import { appConfig, defaultCartoStyleUrl, withCartoBasemapKey } from '@/services/config'
 import type { Coordinates, RouteOption, TripInput } from '@/types/aniRoute'
 
@@ -30,11 +30,12 @@ let mapLibreModule: typeof import('maplibre-gl') | null = null
 let markers: MapMarker[] = []
 let styleFailureTimer: number | undefined
 
-const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e' }
+const categoryColors: Record<string, string> = { optimal: '#0b7a54', safer: '#2563eb', fastest: '#e4572e', alternative: '#6b7280' }
 const routeLayerDefinitions = [
   { category: 'optimal' as const, sourceId: 'route-optimal-source', casingId: 'route-optimal-casing', layerId: 'route-optimal', color: '#0b7a54', offset: 0 },
   { category: 'safer' as const, sourceId: 'route-safer-source', casingId: 'route-safer-casing', layerId: 'route-safer', color: '#2563eb', offset: 0 },
   { category: 'fastest' as const, sourceId: 'route-fastest-source', casingId: 'route-fastest-casing', layerId: 'route-fastest', color: '#e4572e', offset: 0 },
+  { category: 'alternative' as const, sourceId: 'route-alternative-source', casingId: 'route-alternative-casing', layerId: 'route-alternative', color: '#6b7280', offset: 0 },
 ]
 
 function cartoRasterStyle(): StyleSpecification {
@@ -143,6 +144,7 @@ function selectedWaypoints() {
 }
 
 const hasMapSelection = computed(() => selectedWaypoints().length > 0)
+const legendCategories = computed(() => new Set(props.routes.map(route => route.category)))
 
 function routeCoordinates(route: Pick<RouteOption, 'geometry'>): MapPoint[] {
   return route.geometry.coordinates.map(([longitude, latitude]) => [longitude, latitude] as MapPoint)
@@ -176,7 +178,8 @@ function makeHazardMarker(name: string, note: string, hazardType?: string) {
 
 function shortPlaceLabel(prefix: string, place: string) {
   const name = place.trim() || (prefix === 'A' ? 'Origin' : 'Destination')
-  return `${prefix} · ${name.length > 18 ? `${name.slice(0, 17)}…` : name}`
+  const short = name.split(",")[0].trim() || name
+  return `${prefix} · ${short.length > 24 ? `${short.slice(0, 23)}…` : short}`
 }
 
 function deliveryPointLabel(index: number) {
@@ -267,8 +270,9 @@ function createMarkers(shouldFitBounds = true) {
   const bounds = new LngLatBounds(boundPoints[0], boundPoints[0])
   for (const point of boundPoints) bounds.extend(point)
   if (shouldFitBounds) {
+    // Extra top padding: pin labels sit above their point, so the pickup label is never cut off.
     instance.fitBounds(bounds, {
-      padding: 72,
+      padding: { top: 96, bottom: 48, left: 64, right: 72 },
       maxZoom: 14,
       pitch: props.active ? 38 : 0,
       bearing: props.active ? -12 : 0,
@@ -347,13 +351,16 @@ function addRouteLayers(instance: MapInstance) {
       })
     }
     instance.setPaintProperty(routeLayer.casingId, 'line-width', isSelected ? 12 : 6)
-    instance.setPaintProperty(routeLayer.casingId, 'line-opacity', isSelected ? 1 : 0.08)
-    instance.setPaintProperty(routeLayer.layerId, 'line-width', isSelected ? 7 : 3)
-    instance.setPaintProperty(routeLayer.layerId, 'line-opacity', isSelected ? 1 : 0.14)
+    instance.setPaintProperty(routeLayer.casingId, 'line-opacity', isSelected ? 1 : 0.5)
+    instance.setPaintProperty(routeLayer.layerId, 'line-width', isSelected ? 7 : 4)
+    instance.setPaintProperty(routeLayer.layerId, 'line-opacity', isSelected ? 1 : 0.55)
   }
 
   try {
-    for (const routeLayer of routeLayerDefinitions) {
+    // Draw the selected route last so it sits on top of the faded alternatives.
+    const selectedCategory = props.routes.find(route => route.id === props.selectedRouteId)?.category
+    const drawOrder = [...routeLayerDefinitions].sort((a, b) => Number(a.category === selectedCategory) - Number(b.category === selectedCategory))
+    for (const routeLayer of drawOrder) {
       instance.setLayoutProperty(routeLayer.casingId, 'visibility', 'visible')
       instance.setLayoutProperty(routeLayer.layerId, 'visibility', 'visible')
       instance.moveLayer(routeLayer.casingId)
@@ -460,7 +467,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div class="map-stage">
-      <div ref="mapElement" class="map-canvas" role="region" aria-describedby="map-drag-hint" :aria-label="`Map showing route from ${displayPlace(trip.origin, 'pickup point')} to ${displayPlace(trip.destination, 'delivery point')}`"></div>
+      <div ref="mapElement" class="map-canvas" role="region" :aria-label="`Map showing route from ${displayPlace(trip.origin, 'pickup point')} to ${displayPlace(trip.destination, 'delivery point')}`"></div>
       <div v-if="unavailable" class="map-fallback" role="status">
         <strong>Map is unavailable right now.</strong>
         <span>Route choices remain available below.</span>
@@ -474,16 +481,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p id="map-drag-hint" class="map-drag-hint"><Move :size="14" aria-hidden="true" /> {{ hasMapSelection ? 'Drag the selected location pins to reposition pickup and delivery points.' : 'Select pickup and delivery points to place draggable pins on the map.' }}</p>
-    <div class="map-legend" aria-label="Route color legend">
-      <span><i class="legend-line legend-optimal"></i> Recommended route</span>
-      <span><i class="legend-line legend-safer"></i> Safer route</span>
-      <span><i class="legend-line legend-fastest"></i> Fastest route</span>
+    <div v-if="routes.length" class="map-legend" aria-label="Route color legend">
+      <span v-if="legendCategories.has('optimal')"><i class="legend-line legend-optimal"></i> Recommended route</span>
+      <span v-if="legendCategories.has('safer')"><i class="legend-line legend-safer"></i> Safer route</span>
+      <span v-if="legendCategories.has('fastest')"><i class="legend-line legend-fastest"></i> Fastest route</span>
+      <span v-if="legendCategories.has('alternative')"><i class="legend-line legend-alternative"></i> Alternative route</span>
+      <span class="map-legend-credit">Road directions by OSRM</span>
     </div>
-    <p class="map-attribution map-attribution-links">
-      &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>
-      &middot; &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-      &middot; Road directions by OSRM.
-    </p>
   </section>
 </template>
