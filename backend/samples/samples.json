@@ -3,5 +3,40 @@
     "caption": "Street scene: bus and pedestrians (obstruction demo)",
     "source": "Ultralytics sample image bus.jpg (AGPL-3.0)",
     "demo": false
+  },
+  "test_severe_road_damage_01.jpg": {
+    "caption": "Held-out test image (severe road damage)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "test_pothole_02.jpg": {
+    "caption": "Held-out test image (pothole)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "test_severe_road_damage_03.jpg": {
+    "caption": "Held-out test image (severe road damage)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "test_severe_road_damage_04.jpg": {
+    "caption": "Held-out test image (severe road damage)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "test_severe_road_damage_05.jpg": {
+    "caption": "Held-out test image (severe road damage)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "test_pothole_06.jpg": {
+    "caption": "Held-out test image (pothole)",
+    "source": "AniRoute test split (never used in training)",
+    "demo": false
+  },
+  "demo_drive.webm": {
+    "caption": "Held-out test road images (RDD2022 India)",
+    "source": "ml\\data\\aniroute\\test\\images",
+    "demo": true
   }
 }

@@ -1,4 +1,4 @@
-# Dataset guide (no labelling required)
+# Dataset
 
 ## What an object-detection dataset is
 
@@ -25,36 +25,34 @@ plus a `data.yaml` that names the classes and the folders. Images are split into
 
 `road_obstruction` comes from Model B (COCO, no training). `standing_water` is driver-reported only.
 
-## Sources — fill in the exact versions you used
+## Source actually used
 
 | Dataset | Link | License | Images used | Class mapping |
 | --- | --- | --- | --- | --- |
-| Pothole dataset (Roboflow Universe) | e.g. <https://universe.roboflow.com/vg2024/potholedetectionyolov8-tz4cy> (CC BY 4.0, ≈1.4k images) or <https://universe.roboflow.com/yoloteam/potholedetectionyolov8-11c1w/dataset/1> (665 images) | _check page_ | _fill in_ | its pothole class → `pothole` |
-| RDD2022 — Crowdsensing-based Road Damage Detection Challenge 2022 | paper <https://arxiv.org/abs/2209.08538> · official <https://github.com/sekilab/RoadDamageDetector> · YOLO copy e.g. <https://universe.roboflow.com/rdd2022/road-damage-iztzn> | _check page_ | _fill in (subset)_ | D40 → pothole; D00, D10, D20 → severe_road_damage; others dropped |
-| Local Philippine photos (optional, test only) | own photos | own | _fill in_ | labelled in Roboflow |
-| Obstruction test set (Model B evaluation) | e.g. a Roboflow "animals/vehicles on road" set, or ~50 own labelled photos | _check_ | _fill in_ | every box = obstruction |
+| RDD2022 (Crowdsensing-based Road Damage Detection Challenge 2022), India subset | paper <https://arxiv.org/abs/2209.08538> · official <https://github.com/sekilab/RoadDamageDetector> · YOLO-format mirror <https://huggingface.co/datasets/dronefreak/RDD2022> | CC BY-SA 4.0 | 2,692 (seeded random sample, seed 42) | D40 pothole → `pothole`; D00, D10, D20 cracks → `severe_road_damage` |
 
-`ml/reports/dataset_stats.json` records the final counts automatically.
+India was chosen because its roads (mixed asphalt, narrow provincial roads, roadside obstacles) are the closest
+RDD2022 match to Philippine farm-to-market roads. The official RDD2022 download link was offline, so the public
+Hugging Face mirror (same images and labels, already in YOLO format) was used. No account or manual labelling was needed.
 
-## Step by step (about one hour in a browser)
+### Final counts (`ml/reports/dataset_stats.json`)
 
-1. Create a free account at <https://roboflow.com>.
-2. Open the pothole dataset page on Roboflow Universe → **Fork Dataset** (copies it to your workspace).
-3. Open an RDD2022 copy with classes `D00 D10 D20 D40` → **Fork Dataset**.
-   RDD2022 is large; in your fork you can delete countries you do not need, or let
-   `prepare_dataset.py --max-images 2500` take a random subset.
-4. For each fork: **Versions → Generate**. Preprocessing: *Auto-Orient only* (our app does its own
-   resizing). Augmentation: *none* (Ultralytics augments during training). Keep the 70/20/10 split.
-5. **Download Dataset → YOLOv8** → either *Download zip* or *Show download code* (copy workspace,
-   project and version into the Colab notebook).
-6. Run `ml/notebooks/train_colab.ipynb` (steps 5–6 merge and check the data for you):
+| Split | Images | `pothole` boxes | `severe_road_damage` boxes |
+| --- | ---: | ---: | ---: |
+| train | 1,800 | 339 | 889 |
+| val | 448 | 77 | 180 |
+| test | 444 | 75 | 189 |
+
+8 validation/test images were removed by the leakage check (near-duplicates of training images). The source
+train/valid/test splits were kept. `pothole` is the minority class (339 training boxes vs 889),
+which is a stated limitation (see `MODEL_CARD.md`).
+
+## Reproduce it (about 10 minutes, no account)
 
 ```bash
-python ml/scripts/prepare_dataset.py \
-    --source ml/data/raw/potholes --source ml/data/raw/rdd2022 \
-    --map pothole=pothole potholes=pothole D40=pothole \
-          D00=severe_road_damage D10=severe_road_damage D20=severe_road_damage \
-    --max-images 2500
+python ml/scripts/download_rdd2022.py --country India --train 1800 --valid 450 --test 450
+python ml/scripts/prepare_dataset.py --source ml/data/raw/rdd2022_hf/data     --map pothole=pothole longitudinal_crack=severe_road_damage           transverse_crack=severe_road_damage alligator_crack=severe_road_damage
+bash ml/run_cpu_pipeline.sh     # train, select, evaluate, export, demo video, slides (~7 h on a laptop CPU)
 ```
 
 ## What `prepare_dataset.py` guarantees

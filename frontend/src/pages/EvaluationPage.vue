@@ -144,16 +144,16 @@ python ml/evaluate.py latency</pre>
               </tr>
             </tbody>
           </table>
-          <img v-if="images['optimization_chart.png']" class="eval-figure" :src="images['optimization_chart.png']" alt="mAP and speed per experiment" />
+          <img v-if="images['optimization_chart.png']" class="eval-figure eval-figure-narrow" :src="images['optimization_chart.png']" alt="mAP and speed per experiment" />
         </div>
-        <p v-else class="lab-muted">Pending: train E0–E4 (and optionally E7) with <code>ml/train.py</code>, then run <code>python ml/evaluate.py compare --runs ml/runs/E*</code>.</p>
+        <p v-else class="lab-muted">Pending: run <code>bash ml/run_cpu_pipeline.sh</code> (or <code>python ml/evaluate.py compare --runs ml/runs/E0 ml/runs/E1</code>).</p>
       </CardContent>
     </Card>
 
     <div class="eval-grid">
       <Card class="eval-section">
         <CardHeader><div class="eval-section-title"><FlaskConical :size="18" aria-hidden="true" /><CardTitle>Preprocessing: before vs after</CardTitle></div>
-          <CardDescription>Same model, CLAHE contrast enhancement switched off, automatic, or always on.</CardDescription></CardHeader>
+          <CardDescription>Same model, CLAHE contrast enhancement switched off (app default), automatic, or always on.</CardDescription></CardHeader>
         <CardContent>
           <table v-if="ablation" class="lab-table">
             <thead><tr><th>CLAHE</th><th>mAP@0.5 (all)</th><th>F1 (all)</th><th>mAP@0.5 (dark images)</th><th>Recall (dark)</th></tr></thead>
@@ -204,7 +204,7 @@ python ml/evaluate.py latency</pre>
               <tr v-for="key in ['without_roi', 'with_roi']" :key="key"><td>{{ key === 'with_roi' ? 'With corridor rule' : 'Without rule' }}</td><td>{{ pct(modelB.results[key]?.precision) }}</td><td>{{ pct(modelB.results[key]?.recall) }}</td><td>{{ num(modelB.results[key]?.f1) }}</td><td>{{ modelB.results[key]?.fp }}</td></tr>
             </tbody>
           </table>
-          <p v-else class="lab-muted">Pending: <code>python ml/evaluate.py obstruction --data ml/data/obstruction_test/data.yaml</code>.</p>
+          <p v-else class="lab-muted">Model B accuracy not measured: we did not label an obstruction test set. It is the unchanged COCO model; the driving-corridor rule is demonstrated on the street sample in the Vision Lab.</p>
           <p v-if="smoothing" class="eval-stat-line">
             Drive “{{ smoothing.video }}” ({{ smoothing.duration_s }} s): <strong>{{ smoothing.without_smoothing.alerts_per_minute }}</strong> alerts/min without smoothing →
             <strong>{{ smoothing.with_smoothing.alerts_per_minute }}</strong> with {{ smoothing.with_smoothing.min_hits }}-of-{{ smoothing.with_smoothing.window }} voting.
@@ -232,7 +232,7 @@ python ml/evaluate.py latency</pre>
           <template v-if="gallery[kind]?.length">
             <h3 class="gallery-title">{{ title }}</h3>
             <div class="error-gallery">
-              <figure v-for="item in gallery[kind]" :key="item.url"><img :src="item.url" :alt="item.caption" loading="lazy" /><figcaption>{{ item.caption }}</figcaption></figure>
+              <figure v-for="item in gallery[kind]" :key="item.url"><img :src="item.url" :alt="item.caption" /><figcaption>{{ item.caption }}</figcaption></figure>
             </div>
           </template>
         </div>
@@ -255,11 +255,12 @@ python ml/evaluate.py latency</pre>
       <CardHeader><div class="eval-section-title"><TriangleAlert :size="18" aria-hidden="true" /><CardTitle>Limitations</CardTitle></div></CardHeader>
       <CardContent>
         <ul class="limits-list">
-          <li><strong>Training data is mostly foreign roads.</strong> Public datasets (RDD2022, Roboflow) come largely from India, Japan and other countries; accuracy on Philippine farm-to-market roads is lower until local images are added<template v-if="main?.extra_splits?.test_local"> (local test mAP@0.5 {{ num(main.extra_splits.test_local.map50) }})</template>.</li>
+          <li><strong>Training data is from Indian roads.</strong> The RDD2022 India subset is the closest public match, but there is no labelled Philippine test set yet; expect lower accuracy on local farm-to-market roads until local images are added<template v-if="main?.extra_splits?.test_local"> (local test mAP@0.5 {{ num(main.extra_splits.test_local.map50) }})</template>.</li>
           <li><strong>Standing water is not detected automatically.</strong> Public flooded-road data is too small and inconsistent; drivers report it manually.</li>
           <li><strong>Model B has no carabao, goat, fallen-tree or landslide class.</strong> COCO covers cows, horses, sheep, dogs, people and vehicles only.</li>
           <li><strong>Small or distant potholes and faint cracks are missed most often</strong> — see the size breakdown above when available.</li>
-          <li><strong>Night, rain and motion blur reduce recall.</strong> CLAHE helps only with darkness and low contrast, not with blur or glare.</li>
+          <li><strong>Night, rain and motion blur reduce recall.</strong> CLAHE contrast enhancement did not help on our data (see the ablation), so it is off by default.</li>
+          <li><strong>Modest accuracy.</strong> A nano model trained for 40 epochs on a laptop CPU; many errors are boxes drawn differently from the annotators' boxes. A larger model and more data need a GPU.</li>
           <li><strong>Route-risk weights are heuristics</strong>, not validated postharvest-loss coefficients; field trials are needed before claiming loss reduction.</li>
           <li><strong>Distance to the hazard is not estimated</strong>; hazards are pinned at the vehicle's GPS position when confirmed.</li>
         </ul>

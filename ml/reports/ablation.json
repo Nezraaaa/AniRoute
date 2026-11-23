@@ -1,0 +1,55 @@
+{
+  "split": "test",
+  "confidence": 0.145,
+  "modes": {
+    "off": {
+      "overall": {
+        "map50": 0.2776,
+        "map50_95": 0.1224,
+        "precision": 0.4069,
+        "recall": 0.3144,
+        "f1": 0.3547
+      },
+      "dark_subset": {
+        "images": 13,
+        "map50": 0.4347,
+        "precision": 0.5,
+        "recall": 0.3,
+        "f1": 0.375
+      }
+    },
+    "auto": {
+      "overall": {
+        "map50": 0.2648,
+        "map50_95": 0.1156,
+        "precision": 0.401,
+        "recall": 0.3068,
+        "f1": 0.3476
+      },
+      "dark_subset": {
+        "images": 13,
+        "map50": 0.2836,
+        "precision": 0.5,
+        "recall": 0.1,
+        "f1": 0.1667
+      }
+    },
+    "on": {
+      "overall": {
+        "map50": 0.1955,
+        "map50_95": 0.0779,
+        "precision": 0.3397,
+        "recall": 0.2008,
+        "f1": 0.2524
+      },
+      "dark_subset": {
+        "images": 13,
+        "map50": 0.2836,
+        "precision": 0.5,
+        "recall": 0.1,
+        "f1": 0.1667
+      }
+    }
+  },
+  "note": "off = no CLAHE, auto = CLAHE on dark/low-contrast frames (app default), on = always"
+}

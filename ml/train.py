@@ -19,6 +19,7 @@ the same network from scratch (yolo11n.yaml) to show what pretraining contribute
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import shutil
 from pathlib import Path
@@ -57,12 +58,16 @@ def main() -> None:
     parser.add_argument("--base", default=None, help="override the starting model (e.g. yolo11s.pt for E4)")
     parser.add_argument("--project", default=str(RUNS))
     parser.add_argument("--deploy", action="store_true", help="copy best.pt to backend/models/aniroute-hazards-v1.pt")
+    parser.add_argument("--resume", action="store_true",
+                        help="continue an interrupted run from its last.pt (e.g. after a reboot)")
     args = parser.parse_args()
 
     from ultralytics import YOLO
 
     preset = dict(EXPERIMENTS[args.experiment])
     title, change = preset.pop("title"), preset.pop("change")
+    if args.epochs is not None:  # keep the report text truthful when the preset's epochs are overridden
+        change = re.sub(r"\d+ epochs", f"{args.epochs} epochs", change)
     model_name = args.base or preset.pop("model")
     preset.pop("model", None)
     options = {**COMMON, **preset}
@@ -75,10 +80,15 @@ def main() -> None:
         options["fraction"] = args.fraction
 
     print(f"{args.experiment} · {title}: {change}\n  start from {model_name}  options {options}")
-    model = YOLO(model_name)
-    model.train(data=args.data, project=args.project, name=args.experiment, exist_ok=True, **options)
-
     run_dir = Path(args.project) / args.experiment
+    last = run_dir / "weights" / "last.pt"
+    if args.resume and last.exists():
+        print(f"  resuming from {last}")
+        YOLO(str(last)).train(resume=True)
+    else:
+        model = YOLO(model_name)
+        model.train(data=args.data, project=args.project, name=args.experiment, exist_ok=True, **options)
+
     meta = {"id": args.experiment, "title": title, "change": change, "model": model_name,
             "epochs": options["epochs"], "imgsz": options["imgsz"], "fraction": args.fraction,
             "device": options.get("device", "auto")}

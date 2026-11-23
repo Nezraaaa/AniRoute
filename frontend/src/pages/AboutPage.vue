@@ -8,7 +8,7 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 
 const pipeline = [
   { icon: Camera, title: 'Capture', text: 'Phone or dashcam frame, uploaded photo or recorded video' },
-  { icon: Layers, title: 'Preprocess', text: 'Fix orientation · CLAHE on dark frames · letterbox to 640×640' },
+  { icon: Layers, title: 'Preprocess', text: 'Fix orientation · letterbox to 640×640 · optional CLAHE' },
   { icon: Cpu, title: 'Detect (2 models)', text: 'A: fine-tuned YOLO for potholes and cracks · B: pretrained COCO YOLO for obstructions' },
   { icon: ScanSearch, title: 'Filter', text: 'Confidence threshold · driving-corridor rule · hazard must appear in 2 of 3 frames' },
   { icon: ShieldCheck, title: 'Confirm', text: 'Driver confirms by tap or voice; evidence frame and GPS are saved' },
@@ -97,7 +97,8 @@ const beneficiaries = [
           </p>
           <p>
             <strong>Why CLAHE?</strong> Contrast Limited Adaptive Histogram Equalisation brightens dark regions tile by tile while
-            limiting noise. It is applied to lightness only, so colours (and the look of water or asphalt) are unchanged.
+            limiting noise, on lightness only. We measured it rather than assumed it: on our road images it lowered accuracy, so it is
+            off by default and kept as an option in the Vision Lab.
           </p>
         </CardContent>
       </Card>

@@ -1,0 +1,145 @@
+{
+  "status": "evaluated",
+  "model": {
+    "weights": "aniroute-hazards-v1.pt",
+    "fingerprint": "9deaab59ce62",
+    "classes": [
+      "pothole",
+      "severe_road_damage"
+    ],
+    "imgsz": 640,
+    "architecture": "YOLO (Ultralytics), fine-tuned from COCO-pretrained weights"
+  },
+  "dataset": {
+    "yaml": "C:\\Users\\Nezra\\Downloads\\aniroute\\aniroute\\ml\\data\\aniroute\\data.yaml",
+    "split": "test",
+    "images": 444,
+    "instances": 264
+  },
+  "overall": {
+    "map50": 0.2776,
+    "map50_95": 0.1224,
+    "precision": 0.4069,
+    "recall": 0.3144,
+    "f1": 0.3547,
+    "tp": 83,
+    "fp": 121,
+    "fn": 181
+  },
+  "per_class": {
+    "pothole": {
+      "instances": 75,
+      "ap50": 0.1968,
+      "ap50_95": 0.0826,
+      "precision_at_operating": 0.3396,
+      "recall_at_operating": 0.2133,
+      "tp": 17,
+      "fp": 36,
+      "fn": 58,
+      "precision": 0.3208,
+      "recall": 0.2267,
+      "f1": 0.2656
+    },
+    "severe_road_damage": {
+      "instances": 189,
+      "ap50": 0.3584,
+      "ap50_95": 0.1622,
+      "precision_at_operating": 0.4858,
+      "recall_at_operating": 0.3386,
+      "tp": 66,
+      "fp": 85,
+      "fn": 123,
+      "precision": 0.4371,
+      "recall": 0.3492,
+      "f1": 0.3882
+    }
+  },
+  "operating_point": {
+    "confidence": 0.145,
+    "iou": 0.5,
+    "nms_iou": 0.6,
+    "selection": "max mean F1 on 'val' split"
+  },
+  "preprocessing": {
+    "clahe": "off",
+    "letterbox": 640
+  },
+  "speed_ms": {
+    "preprocess_mean": 7.8,
+    "inference_mean": 34.2,
+    "device": "cpu"
+  },
+  "error_breakdown": {
+    "miss_rate_by_size": {
+      "small": {
+        "objects": 16,
+        "missed": 14,
+        "miss_rate": 0.875
+      },
+      "medium": {
+        "objects": 148,
+        "missed": 119,
+        "miss_rate": 0.804
+      },
+      "large": {
+        "objects": 100,
+        "missed": 45,
+        "miss_rate": 0.45
+      }
+    },
+    "miss_rate_by_lighting": {
+      "normal": {
+        "objects": 254,
+        "missed": 172,
+        "miss_rate": 0.677
+      },
+      "dark": {
+        "objects": 10,
+        "missed": 6,
+        "miss_rate": 0.6
+      }
+    },
+    "false_positives_by_class": {
+      "severe_road_damage": 84,
+      "pothole": 34
+    },
+    "misclassification_pairs": {
+      "pothole \u2192 severe_road_damage": 1,
+      "severe_road_damage \u2192 pothole": 2
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "pothole",
+      "severe_road_damage",
+      "background"
+    ],
+    "rows": "true class",
+    "columns": "predicted class",
+    "matrix": [
+      [
+        17,
+        1,
+        57
+      ],
+      [
+        2,
+        66,
+        121
+      ],
+      [
+        34,
+        84,
+        0
+      ]
+    ]
+  },
+  "extra_splits": {},
+  "evaluated_at": "2026-11-23T00:27:05.820647+00:00",
+  "git_commit": "5775f105",
+  "machine": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
+    "python": "3.12.3"
+  }
+}

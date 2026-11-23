@@ -50,32 +50,30 @@ cd frontend && npm ci && npm run dev
 
 ## Train and evaluate the road-surface model (Model A)
 
-No labelling needed — the datasets come from Roboflow Universe already labelled. Follow
-[`docs/DATASET.md`](docs/DATASET.md), then open
-[`ml/notebooks/train_colab.ipynb`](ml/notebooks/train_colab.ipynb) in Google Colab (free T4 GPU). It:
-
-1. merges the datasets and removes train/test near-duplicates (`ml/scripts/prepare_dataset.py`);
-2. trains the optimisation series E0 baseline → E4 (+ E7 from scratch) (`ml/train.py`);
-3. picks the best run on the validation split and evaluates it once on the test split (`ml/evaluate.py`);
-4. zips the weights and reports for the laptop.
-
-On the laptop:
+No labelling needed: the data is a seeded subset of RDD2022 (India, already labelled), downloaded from its
+public Hugging Face mirror. Details in [`docs/DATASET.md`](docs/DATASET.md). Everything ran on a laptop CPU:
 
 ```bash
-python ml/export.py --formats onnx openvino      # faster CPU inference (auto-selected by the API)
-python ml/evaluate.py latency                    # speed table for this machine
-python ml/scripts/make_demo_video.py --video my_drive.mp4   # recorded drive for the demonstration
-python presentation/build_deck.py                # rebuild the slides with final figures
-cd frontend && node scripts/capture-screenshots.mjs          # fresh screenshots (servers running)
+python ml/scripts/download_rdd2022.py --country India --train 1800 --valid 450 --test 450
+python ml/scripts/prepare_dataset.py --source ml/data/raw/rdd2022_hf/data     --map pothole=pothole longitudinal_crack=severe_road_damage           transverse_crack=severe_road_damage alligator_crack=severe_road_damage
+bash ml/run_cpu_pipeline.sh     # ~7 h: E0 + E1 training, pick best on val, test once, export, speed,
+                                # demo video, slides; safe to re-run after a reboot (resumes)
+cd frontend && npm run screenshots   # fresh screenshots (servers running)
 ```
+
+1. `prepare_dataset.py` maps the classes and removes train/test near-duplicates;
+2. `train.py` trains E0 (baseline, 20 epochs) and E1 (40 epochs, early stopping) from COCO weights;
+3. `evaluate.py` picks the better run on the validation split and evaluates it once on the test split;
+4. `export.py` writes ONNX/OpenVINO copies, auto-selected by the API for faster CPU inference.
+
+With a GPU, `ml/notebooks/train_colab.ipynb` and the presets E2–E4/E7 in `train.py` extend the series.
 
 ## Reproduce every number
 
 ```bash
 python ml/evaluate.py test        --data ml/data/aniroute/data.yaml --run-dir ml/runs/<selected>
-python ml/evaluate.py compare     --runs ml/runs/E0 ml/runs/E1 ml/runs/E2 ml/runs/E3 ml/runs/E4
+python ml/evaluate.py compare     --runs ml/runs/E0 ml/runs/E1
 python ml/evaluate.py latency
-python ml/evaluate.py obstruction --data ml/data/obstruction_test/data.yaml
 python ml/evaluate.py smoothing   --video backend/samples/demo_drive.webm
 python ml/scripts/preprocess_demo.py
 ```
@@ -98,8 +96,9 @@ backend/
   models/              aniroute-hazards-v1.pt (Model A, after training); yolo11n.pt auto-downloaded
   samples/             sample images and recorded drive for the Vision Lab and trip
 ml/
-  notebooks/train_colab.ipynb   training + optimisation on Colab
-  scripts/                      prepare_dataset, preprocess_demo, make_demo_video
+  run_cpu_pipeline.sh           the full CPU run used for the submitted results
+  notebooks/train_colab.ipynb   optional GPU training on Colab
+  scripts/                      download_rdd2022, prepare_dataset, preprocess_demo, make_demo_video
   train.py · evaluate.py · export.py
   evaluation/                   metrics (unit-tested), dataset reader, plots
   reports/                      every metric and figure used by the app, docs and slides
@@ -114,7 +113,7 @@ presentation/          build_deck.py → AniRoute_CSST106.pptx, screenshots/
 
 - [Problem and objectives](docs/PROBLEM_AND_OBJECTIVES.md) — real-world problem, sources, beneficiaries
 - [System overview](docs/SYSTEM_OVERVIEW.md) — architecture and detection flowchart
-- [Dataset](docs/DATASET.md) — sources, licences, step-by-step Roboflow guide
+- [Dataset](docs/DATASET.md) — source, licence, counts, how to reproduce
 - [Model card](docs/MODEL_CARD.md) — how YOLO works, pretrained vs fine-tuned, thresholds, limitations
 - [Evaluation](docs/EVALUATION.md) — protocol, metrics explained, results
 - [Demo script](docs/DEMO_SCRIPT.md) · [Defense Q&A](docs/DEFENSE_QA.md) · [Presentation outline](docs/PRESENTATION_OUTLINE.md)

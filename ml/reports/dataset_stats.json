@@ -1,0 +1,41 @@
+{
+  "classes": [
+    "pothole",
+    "severe_road_damage"
+  ],
+  "sources": [
+    "ml/data/raw/rdd2022_hf/data"
+  ],
+  "class_mapping": {
+    "pothole": "pothole",
+    "longitudinal_crack": "severe_road_damage",
+    "transverse_crack": "severe_road_damage",
+    "alligator_crack": "severe_road_damage",
+    "severe_road_damage": "severe_road_damage"
+  },
+  "images_per_split": {
+    "train": 1800,
+    "val": 448,
+    "test": 444
+  },
+  "instances_per_split": {
+    "train": {
+      "pothole": 339,
+      "severe_road_damage": 889
+    },
+    "val": {
+      "severe_road_damage": 180,
+      "pothole": 77
+    },
+    "test": {
+      "pothole": 75,
+      "severe_road_damage": 189
+    }
+  },
+  "dropped": {
+    "unreadable_images": 0,
+    "near_duplicates_removed_from_val_test": 8,
+    "boxes_of_unmapped_classes": {}
+  },
+  "split_rule": "source train/valid/test splits kept"
+}

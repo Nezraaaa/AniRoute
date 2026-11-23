@@ -140,7 +140,7 @@ class FakeModel:
 
 
 def fake_detector() -> HazardDetector:
-    detector = HazardDetector(VisionSettings(warmup=False))
+    detector = HazardDetector(VisionSettings(warmup=False, conf_a=0.35))
     # 1280x720 → letterbox 640: scale 0.5, pad_y 140.
     detector.model_a = FakeModel("A", [  # type: ignore[assignment]
         RawBox(0, "pothole", 0.91, (300, 400, 380, 440)),
@@ -225,7 +225,7 @@ def test_detect_rejects_non_images(client):
 
 
 def test_detect_returns_503_without_any_model(monkeypatch):
-    detector = HazardDetector(VisionSettings(warmup=False))
+    detector = HazardDetector(VisionSettings(warmup=False, conf_a=0.35))
     detector.model_a.load = lambda: False
     detector.model_b.load = lambda: False
     monkeypatch.setattr(ensemble, "_detector", detector)

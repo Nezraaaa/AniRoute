@@ -1,0 +1,71 @@
+{
+  "split": "val",
+  "selected": "E1",
+  "rows": [
+    {
+      "id": "E0",
+      "title": "Baseline",
+      "change": "COCO-pretrained YOLO11n, default settings, 20 epochs, 640 px",
+      "kind": "training",
+      "imgsz": 640,
+      "model": "yolo11n.pt",
+      "epochs": 20,
+      "map50": 0.2895,
+      "map50_95": 0.1172,
+      "precision": 0.3797,
+      "recall": 0.3502,
+      "f1": 0.3644,
+      "operating_conf": 0.138,
+      "cpu_ms": 45.0,
+      "fps": 22.2
+    },
+    {
+      "id": "E1",
+      "title": "Longer training",
+      "change": "40 epochs with early stopping (patience 20)",
+      "kind": "training",
+      "imgsz": 640,
+      "model": "yolo11n.pt",
+      "epochs": 40,
+      "map50": 0.3341,
+      "map50_95": 0.137,
+      "precision": 0.4851,
+      "recall": 0.3813,
+      "f1": 0.427,
+      "operating_conf": 0.145,
+      "cpu_ms": 45.8,
+      "fps": 21.8
+    },
+    {
+      "id": "E5",
+      "title": "Confidence threshold tuned",
+      "kind": "inference",
+      "change": "E1: conf 0.25 \u2192 0.14 (max F1)",
+      "map50": 0.3341,
+      "map50_95": 0.137,
+      "f1_before": 0.3775,
+      "f1": 0.427,
+      "precision_before": 0.6837,
+      "precision": 0.4851,
+      "recall_before": 0.2607,
+      "recall": 0.3813,
+      "cpu_ms": 45.8,
+      "fps": 21.8
+    },
+    {
+      "id": "E6",
+      "title": "CLAHE preprocessing",
+      "kind": "inference",
+      "clahe_selected": "off",
+      "change": "E1: CLAHE auto vs off \u2192 off kept (higher val mAP)",
+      "map50_before": 0.3341,
+      "map50": 0.339,
+      "f1_before": 0.427,
+      "f1": 0.4304,
+      "cpu_ms": 45.8,
+      "fps": 21.8
+    }
+  ],
+  "selection_rule": "highest validation mAP@0.5, ties broken by CPU speed",
+  "evaluated_at": "2026-11-23T00:28:48.823746+00:00"
+}

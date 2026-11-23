@@ -1,0 +1,44 @@
+{
+  "video": "demo_drive.webm",
+  "duration_s": 36.0,
+  "frames_analysed": 72,
+  "sample_fps": 2.0,
+  "without_smoothing": {
+    "alerts": 39,
+    "alerts_per_minute": 65.0
+  },
+  "with_smoothing": {
+    "alerts": 4,
+    "alerts_per_minute": 6.7,
+    "window": 3,
+    "min_hits": 2,
+    "cooldown_s": 20.0
+  },
+  "alerts_for_review": [
+    {
+      "t": 0.5,
+      "hazard_type": "severe_road_damage",
+      "confidence": 0.351,
+      "verdict": "review"
+    },
+    {
+      "t": 2.0,
+      "hazard_type": "road_obstruction",
+      "confidence": 0.854,
+      "verdict": "review"
+    },
+    {
+      "t": 26.0,
+      "hazard_type": "road_obstruction",
+      "confidence": 0.77,
+      "verdict": "review"
+    },
+    {
+      "t": 29.0,
+      "hazard_type": "severe_road_damage",
+      "confidence": 0.475,
+      "verdict": "review"
+    }
+  ],
+  "note": "Set each alert's verdict to 'true' or 'false' after watching the video to report false alarms per minute."
+}

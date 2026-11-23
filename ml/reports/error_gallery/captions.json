@@ -1,0 +1,17 @@
+{
+  "false_negatives/01_data_002610.jpg": "Missed severe road damage \u00b7 large object \u00b7 normal light",
+  "false_negatives/02_data_002346.jpg": "Missed severe road damage \u00b7 large object \u00b7 normal light",
+  "false_negatives/03_data_002285.jpg": "Missed pothole \u00b7 medium object \u00b7 normal light",
+  "false_negatives/04_data_002384.jpg": "Missed pothole \u00b7 small object \u00b7 normal light",
+  "false_negatives/05_data_002281.jpg": "Missed pothole \u00b7 medium object \u00b7 normal light",
+  "false_negatives/06_data_002605.jpg": "Missed severe road damage \u00b7 medium object \u00b7 normal light",
+  "false_positives/01_data_002276.jpg": "False alarm: severe road damage 54% \u00b7 large box \u00b7 normal light",
+  "false_positives/02_data_002521.jpg": "False alarm: severe road damage 52% \u00b7 large box \u00b7 normal light",
+  "false_positives/03_data_002430.jpg": "False alarm: pothole 52% \u00b7 medium box \u00b7 normal light",
+  "false_positives/04_data_002268.jpg": "False alarm: pothole 46% \u00b7 medium box \u00b7 normal light",
+  "false_positives/05_data_002609.jpg": "False alarm: pothole 45% \u00b7 medium box \u00b7 normal light",
+  "false_positives/06_data_002678.jpg": "False alarm: severe road damage 44% \u00b7 large box \u00b7 normal light",
+  "misclassified/01_data_002431.jpg": "Pothole predicted as severe road damage 37% \u00b7 normal light",
+  "misclassified/02_data_002544.jpg": "Severe road damage predicted as pothole 21% \u00b7 dark frame",
+  "misclassified/03_data_002439.jpg": "Severe road damage predicted as pothole 24% \u00b7 normal light"
+}

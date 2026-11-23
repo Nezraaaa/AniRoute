@@ -217,7 +217,7 @@ notes(s, "Quote the ranges, not a single number. Rough roads: World Bank Mindana
 # 3 Objectives
 s = prs.slides.add_slide(BLANK)
 title(s, "What the system must do", "Objectives")
-objectives = [("Detect", "Potholes, road damage and obstructions in real time"), ("See in poor light", "CLAHE preprocessing, measured"),
+objectives = [("Detect", "Potholes, road damage and obstructions in real time"), ("Test preprocessing", "CLAHE ablation, decided on validation"),
               ("Avoid false alarms", "Driving corridor + 2-of-3 frames"), ("Re-route", "Confirmed hazards raise route risk"),
               ("Prove it", "P, R, F1, mAP, confusion matrix")]
 for index, (head, body) in enumerate(objectives):
@@ -242,7 +242,7 @@ notes(s, "Concrete benefit per group. LGUs get a by-product: a map of confirmed 
 # 5 System overview
 s = prs.slides.add_slide(BLANK)
 title(s, "System overview", "Architecture")
-steps = [("Capture", "camera · video · image"), ("Preprocess", "EXIF · CLAHE · 640 px"), ("Model A", "fine-tuned YOLO\npotholes · cracks"),
+steps = [("Capture", "camera · video · image"), ("Preprocess", "EXIF · 640 px letterbox"), ("Model A", "fine-tuned YOLO\npotholes · cracks"),
          ("Model B", "pretrained COCO\nobstructions"), ("Filter", "threshold · corridor\n2 of 3 frames"), ("Confirm", "driver · GPS · evidence"),
          ("Re-route", "risk × crop sensitivity")]
 positions = [(0.5, 3.0), (2.35, 3.0), (4.2, 2.0), (4.2, 4.0), (6.05, 3.0), (7.9, 3.0), (9.75, 3.0)]
@@ -271,7 +271,7 @@ picture(s, REPORTS / "dataset_samples.png", Inches(0.6), Inches(1.6), Inches(7.4
 picture(s, REPORTS / "dataset_class_distribution.png", Inches(8.2), Inches(1.6), Inches(4.6), Inches(3.4))
 stats = load_json("dataset_stats.json")
 summary = (f"Images — train {stats['images_per_split'].get('train', 0)}, val {stats['images_per_split'].get('val', 0)}, "
-           f"test {stats['images_per_split'].get('test', 0)}") if stats else "Roboflow pothole set + RDD2022 subset"
+           f"test {stats['images_per_split'].get('test', 0)}") if stats else "RDD2022 India subset"
 text(s, Inches(8.2), Inches(5.2), Inches(4.6), Inches(1.6),
      [summary, "D40 → pothole · D00/D10/D20 → severe road damage", "Near-duplicates removed from val/test"], size=13, color=MUTED)
 notes(s, "Explain the YOLO label format, the 70/20/10 split, and why test images are never used for choices. "
@@ -286,9 +286,9 @@ if before_after.exists():
 else:
     crop_picture(s, SHOTS / "02-vision-lab.png", Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.2), top_fraction=0.63)
 text(s, Inches(0.6), Inches(6.8), Inches(12), Inches(0.5),
-     "Orientation fix  ·  CLAHE on lightness when dark or low-contrast  ·  letterbox to 640 × 640 (no stretching)", size=14, color=MUTED)
+     "Orientation fix  ·  letterbox to 640 × 640 (no stretching)  ·  CLAHE tested, off by default (it lowered mAP)", size=14, color=MUTED)
 notes(s, "CLAHE equalises the histogram per 8×8 tile with a clip limit of 2.0, on the LAB lightness channel only, so colours "
-         "are unchanged. Auto mode applies it only when mean lightness < 95 or contrast < 38. Augmentation is separate (training only).")
+         "are unchanged. We measured it: on validation it lowered mAP, so the app keeps it off and offers it as an option. Augmentation is separate (training only).")
 
 # 8 CV method
 s = prs.slides.add_slide(BLANK)
@@ -315,7 +315,7 @@ for r, row in enumerate(rows):
         cell.fill.solid()
         cell.fill.fore_color.rgb = GREEN if r == 0 else (WHITE if r % 2 else GREEN_LIGHT)
 notes(s, "One-stage detector: one forward pass. Transfer learning: keep the backbone's general features, retrain the head "
-         "for our classes. E7 trains from scratch to show the benefit. Two-stage detectors are slower on a CPU.")
+         "for our classes, so two CPU training runs were enough. Two-stage detectors are slower on a CPU.")
 
 # 9 Implementation
 s = prs.slides.add_slide(BLANK)
@@ -369,8 +369,8 @@ if OPTIMIZATION:
 if LATENCY and LATENCY.get("system"):
     line += f"  ·  end-to-end {LATENCY['system']['fps']} FPS on laptop CPU"
 text(s, Inches(0.6), Inches(6.3), Inches(12), Inches(0.6), line, size=15, bold=True, color=GREEN_DARK)
-notes(s, "One change per experiment: longer training, bigger model, higher resolution, augmentation; E5 threshold, "
-         "E6 CLAHE. Speed: OpenVINO/ONNX vs PyTorch on the same CPU.")
+notes(s, "One change per experiment, all decided on validation: E0 baseline, E1 longer training (selected); E5 confidence "
+         "threshold at max F1; E6 CLAHE auto vs off (off kept). Speed: OpenVINO/ONNX vs PyTorch on the same CPU.")
 
 # 13 Error analysis
 s = prs.slides.add_slide(BLANK)
@@ -409,7 +409,7 @@ notes(s, "Follow docs/DEMO_SCRIPT.md. Backup: screenshots in presentation/screen
 # 15 Limitations
 s = prs.slides.add_slide(BLANK)
 title(s, "Limitations", "Honest assessment")
-limits = [("Foreign training data", "RDD2022 and Roboflow roads differ from Philippine farm roads"),
+limits = [("Foreign training data", "RDD2022 India roads differ from Philippine farm roads"),
           ("No standing-water model", "Flooded-road data is scarce; drivers report it"),
           ("COCO gaps", "No carabao, goat, fallen tree or landslide class"),
           ("Hard conditions", "Small potholes, night, rain and blur reduce recall"),

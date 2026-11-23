@@ -10,7 +10,7 @@ flowchart LR
         UI["Overlay boxes · alert · confirm dialog · map"]
     end
     subgraph API["FastAPI backend (laptop CPU)"]
-        PRE["Preprocessing<br/>EXIF · CLAHE (auto) · letterbox 640"]
+        PRE["Preprocessing<br/>EXIF · letterbox 640 · CLAHE optional (off)"]
         A["Model A<br/>YOLO11 fine-tuned<br/>pothole · severe road damage"]
         B["Model B<br/>YOLO11n COCO-pretrained<br/>person · animals · vehicles"]
         ROI["Driving-corridor rule<br/>(Model B only)"]
@@ -33,7 +33,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    F["Frame captured (browser)"] --> P["Preprocess:<br/>dark or low contrast? → CLAHE<br/>letterbox to 640×640"]
+    F["Frame captured (browser)"] --> P["Preprocess:<br/>orientation fix<br/>letterbox to 640×640<br/>(CLAHE opt-in)"]
     P --> D["Run Model A and Model B on the same frame"]
     D --> T{"Confidence ≥ threshold?"}
     T -- no --> X["Discard box"]

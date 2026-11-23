@@ -34,9 +34,9 @@ sensitive the crop is. The app then recommends a different route if that is now 
 
 1. **Detect** potholes and severe road damage (fine-tuned YOLO, Model A) and road obstructions
    (pretrained COCO YOLO, Model B) in images, recorded video and live camera frames.
-2. **Improve robustness in poor light** with CLAHE preprocessing, and measure the effect with an
-   ablation (CLAHE off / auto / on) on the test split.
-3. **Optimise** the detector through documented experiments (E0 baseline → E7) and faster CPU runtimes
+2. **Test whether CLAHE preprocessing improves robustness in poor light** with an ablation (off / auto / on),
+   decided on the validation split and reported on the test split.
+3. **Optimise** the detector through documented experiments (E0 baseline → E1 longer training, threshold tuning, CLAHE ablation) and faster CPU runtimes
    (ONNX/OpenVINO), reporting accuracy *and* speed.
 4. **Limit false alarms** with a driving-corridor rule for obstructions and 2-of-3 frame confirmation.
 5. **Turn detections into decisions**: confirmed hazards re-rank delivery routes by crop-spoilage risk.

@@ -481,9 +481,12 @@ def cmd_compare(args) -> None:
                  "cpu_ms": best_row["cpu_ms"], "fps": best_row["fps"]})
     off_gts, off_preds, _ = collect(dataset, split, best_predictor, clahe="off", limit=args.limit)
     off = summarize(off_gts, off_preds, names, best_row["operating_conf"])
-    rows.append({"id": "E6", "title": "CLAHE preprocessing", "kind": "inference",
-                 "change": f"{best_row['id']}: CLAHE off → auto", "map50_before": off["map50"],
-                 "map50": best_row["map50"], "f1_before": off["f1"], "f1": best_row["f1"],
+    auto_better = best_row["map50"] > off["map50"]
+    chosen = best_row if auto_better else off
+    rows.append({"id": "E6", "title": "CLAHE preprocessing", "kind": "inference", "clahe_selected": "auto" if auto_better else "off",
+                 "change": f"{best_row['id']}: CLAHE auto vs off → {'auto' if auto_better else 'off'} kept (higher val mAP)",
+                 "map50_before": best_row["map50"], "map50": chosen["map50"],
+                 "f1_before": best_row["f1"], "f1": chosen["f1"],
                  "cpu_ms": best_row["cpu_ms"], "fps": best_row["fps"]})
 
     write_json("optimization.json", {"split": split, "selected": best_row["id"], "rows": rows,
@@ -663,7 +666,8 @@ def main() -> None:
     test.add_argument("--split", default="test")
     test.add_argument("--threshold-split", default="val")
     test.add_argument("--conf", type=float, default=None, help="fix the operating threshold instead of choosing it on val")
-    test.add_argument("--clahe", default="auto", choices=["auto", "on", "off"])
+    test.add_argument("--clahe", default="off", choices=["auto", "on", "off"],
+                      help="app default is off (chosen on validation, see optimization.json E6)")
     test.add_argument("--imgsz", type=int, default=640)
     test.add_argument("--device", default="cpu")
     test.add_argument("--limit", type=int, default=None, help="evaluate only the first N images (quick check)")

@@ -1,60 +1,92 @@
 {
   "rows": [
     {
+      "model": "Model A",
+      "format": "pt",
+      "imgsz": 640,
+      "mean_ms": 42.8,
+      "p95_ms": 45.9,
+      "fps": 23.3
+    },
+    {
+      "model": "Model A",
+      "format": "pt",
+      "imgsz": 480,
+      "mean_ms": 30.7,
+      "p95_ms": 35.0,
+      "fps": 32.6
+    },
+    {
+      "model": "Model A",
+      "format": "onnx",
+      "imgsz": 640,
+      "mean_ms": 38.5,
+      "p95_ms": 41.8,
+      "fps": 26.0
+    },
+    {
+      "model": "Model A",
+      "format": "openvino",
+      "imgsz": 640,
+      "mean_ms": 33.3,
+      "p95_ms": 42.9,
+      "fps": 30.0
+    },
+    {
       "model": "Model B",
       "format": "pt",
       "imgsz": 640,
-      "mean_ms": 70.9,
-      "p95_ms": 110.6,
-      "fps": 14.1
+      "mean_ms": 45.7,
+      "p95_ms": 50.3,
+      "fps": 21.9
     },
     {
       "model": "Model B",
       "format": "pt",
       "imgsz": 480,
-      "mean_ms": 40.4,
-      "p95_ms": 47.7,
-      "fps": 24.8
+      "mean_ms": 32.8,
+      "p95_ms": 38.2,
+      "fps": 30.5
     },
     {
       "model": "Model B",
       "format": "onnx",
       "imgsz": 640,
-      "mean_ms": 50.3,
-      "p95_ms": 59.2,
-      "fps": 19.9
+      "mean_ms": 39.4,
+      "p95_ms": 43.0,
+      "fps": 25.4
     },
     {
       "model": "Model B",
       "format": "openvino",
       "imgsz": 640,
-      "mean_ms": 39.9,
-      "p95_ms": 54.7,
-      "fps": 25.1
+      "mean_ms": 33.7,
+      "p95_ms": 42.9,
+      "fps": 29.6
     },
     {
-      "model": "System (B)",
+      "model": "System (A+B)",
       "format": "auto",
       "imgsz": 640,
-      "mean_ms": 49.2,
-      "p95_ms": 74.5,
-      "fps": 20.3
+      "mean_ms": 57.6,
+      "p95_ms": 67.4,
+      "fps": 17.4
     }
   ],
   "system": {
-    "models": "B",
-    "mean_ms": 49.2,
-    "p95_ms": 74.5,
-    "fps": 20.3,
+    "models": "A+B",
+    "mean_ms": 57.6,
+    "p95_ms": 67.4,
+    "fps": 17.4,
     "runtime_format": "auto"
   },
-  "images": 1,
-  "runs": 40,
+  "images": 7,
+  "runs": 30,
   "device": "cpu",
   "machine": {
-    "platform": "Windows-11-10.0.26200-SP0",
+    "platform": "Windows-11-10.0.26300-SP0",
     "processor": "AMD64 Family 25 Model 33 Stepping 2, AuthenticAMD",
     "python": "3.12.3"
   },
-  "evaluated_at": "2026-11-22T14:18:03.625759+00:00"
+  "evaluated_at": "2026-11-23T00:20:50.818181+00:00"
 }

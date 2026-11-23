@@ -139,6 +139,7 @@ def optimization_chart(rows: list[dict], path: Path) -> None:
     if any(value for value in fps):
         twin = ax.twinx()
         twin.plot(x, [value or np.nan for value in fps], color=NEUTRAL, marker="o", lw=1.6, label="CPU FPS")
+        twin.set_ylim(0, max(v for v in fps if v) * 1.3)   # from zero, so small timing noise looks small
         twin.set_ylabel("Frames per second (laptop CPU)")
         twin.spines["top"].set_visible(False)
         twin.legend(frameon=False, loc="upper right")

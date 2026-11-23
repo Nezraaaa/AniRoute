@@ -1,0 +1,10 @@
+{
+  "id": "E0",
+  "title": "Baseline",
+  "change": "COCO-pretrained YOLO11n, default settings, 20 epochs, 640 px",
+  "model": "yolo11n.pt",
+  "epochs": 20,
+  "imgsz": 640,
+  "fraction": 1.0,
+  "device": "cpu"
+}

@@ -32,3 +32,7 @@ backend/models/*
 
 # Generated presentation screenshots are kept; temporary captures are not
 presentation/~$*
+
+# Local run logs and the auto-downloaded COCO weights in the repo root
+ml/*.log
+/yolo11n.pt

@@ -39,8 +39,8 @@ parameters) runs in tens of milliseconds on a CPU.
 `YOLO("yolo11n.pt")` loads weights learned on COCO (118k everyday photos, 80 classes). We keep what the
 backbone and neck already know about edges, textures and shapes; Ultralytics replaces the head with one
 for our 2 classes, and training adjusts the whole network to road surfaces. This needs far fewer labelled
-images and training time than starting from random weights. Experiment **E7** trains the same network
-from scratch to measure the difference.
+images and training time than starting from random weights (preset **E7** in `train.py` trains from
+scratch for comparison; it was not run because it needs a GPU).
 
 Model B shows the other use of pretraining: COCO already contains cows, horses, dogs, people and vehicles,
 so no training is needed — only a rule (the driving corridor) that decides when such an object is a
@@ -51,7 +51,7 @@ hazard rather than normal traffic at the roadside.
 | Step | Why |
 | --- | --- |
 | EXIF orientation fix | Phone photos are often stored rotated |
-| CLAHE on the LAB lightness channel, *only* when mean lightness < 95 or contrast (std) < 38 | Brightens night/shadow frames tile by tile, limits noise amplification, keeps colours |
+| CLAHE on the LAB lightness channel — **off by default**; optional *auto* (mean lightness < 95 or contrast < 38) or *on* | Meant to brighten night/shadow frames; the validation ablation showed it lowers mAP on our data, so it is opt-in |
 | Letterbox to 640×640 | Keeps the aspect ratio (no stretching); grey padding |
 | Normalisation to 0–1 | Done inside the YOLO runtime |
 
@@ -60,7 +60,7 @@ thing: it creates varied training images, while preprocessing is applied to ever
 
 ## Training configuration
 
-Presets are in `ml/train.py` (`E0`–`E4`, `E7`): image size 640 (800 in E3), batch 16, seed 42,
+Presets are in `ml/train.py`; the submitted results use `E0` (20 epochs) and `E1` (40 epochs) on CPU: image size 640, batch 16, seed 42,
 deterministic, early stopping patience 20, Ultralytics default optimiser and learning-rate schedule.
 
 ## Thresholds
@@ -80,8 +80,8 @@ See `docs/EVALUATION.md` and the in-app **Evaluation** page; all numbers are gen
 
 ## Limitations and failure modes
 
-- Public training data comes mostly from other countries (RDD2022: Japan, India, Czech Republic, Norway,
-  USA, China); Philippine roads, lighting and vehicles differ.
+- Training data is from India (RDD2022 subset); Philippine roads, lighting and vehicles differ, and there is
+  no labelled Philippine test set yet.
 - Small or distant potholes and faint cracks are the most common misses (see the size breakdown).
 - Wet asphalt, shadows and patched road can look like potholes (false alarms).
 - Night, heavy rain and motion blur reduce recall; CLAHE does not fix blur or glare.

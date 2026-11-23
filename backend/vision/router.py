@@ -50,7 +50,7 @@ def set_hazard_filter(value: TemporalHazardFilter | None) -> None:
     _hazard_filter = value
 
 
-def run_detection(image_bytes: bytes, *, conf: float | None = None, clahe: str = "auto",
+def run_detection(image_bytes: bytes, *, conf: float | None = None, clahe: str | None = None,
                   keep_stage_images: bool = False) -> DetectionResult:
     try:
         image = decode_image(image_bytes)
@@ -99,7 +99,7 @@ def detection_payload(result: DetectionResult, *, return_stages: bool = False, a
 class FrameRequest(BaseModel):
     frame_data_url: str = Field(min_length=30, max_length=3_000_000)
     conf: float | None = Field(default=None, ge=0.01, le=0.99)
-    clahe: Literal["auto", "on", "off"] = "auto"
+    clahe: Literal["auto", "on", "off"] | None = None   # None = server default (ANIROUTE_CLAHE)
     return_stages: bool = False
     annotate: bool = False
 
@@ -119,7 +119,7 @@ def model_info() -> dict:
 def detect_upload(
     file: UploadFile = File(...),
     conf: float | None = Form(default=None, ge=0.01, le=0.99),
-    clahe: Literal["auto", "on", "off"] = Form(default="auto"),
+    clahe: Literal["auto", "on", "off"] | None = Form(default=None),
     return_stages: bool = Form(default=True),
 ) -> dict:
     if file.content_type and not file.content_type.startswith("image/"):

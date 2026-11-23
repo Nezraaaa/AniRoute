@@ -6,9 +6,8 @@ pipeline) on images the model never trained on and writes everything to `ml/repo
 
 ```bash
 python ml/evaluate.py test      --data ml/data/aniroute/data.yaml --run-dir ml/runs/<selected>
-python ml/evaluate.py compare   --runs ml/runs/E0 ml/runs/E1 ml/runs/E2 ml/runs/E3 ml/runs/E4
+python ml/evaluate.py compare   --runs ml/runs/E0 ml/runs/E1
 python ml/evaluate.py latency
-python ml/evaluate.py obstruction --data ml/data/obstruction_test/data.yaml
 python ml/evaluate.py smoothing --video backend/samples/demo_drive.webm
 python ml/scripts/preprocess_demo.py
 ```
@@ -18,7 +17,8 @@ python ml/scripts/preprocess_demo.py
 1. Train on **train**; choose the best experiment and the confidence threshold on **val**.
 2. Report **test** once with those choices fixed.
 3. Near-duplicate images are removed from val/test before training (`prepare_dataset.py`).
-4. The optional `test_local` split (Philippine photos) is never trained on.
+4. The selected model (E1), threshold (0.145) and preprocessing (CLAHE off) were all fixed on validation
+   before the single test run.
 
 ## Metrics in one sentence each
 
@@ -38,48 +38,97 @@ Our implementation (`ml/evaluation/metrics.py`) is unit-tested against hand-comp
 
 ## Results
 
-### Model A on the test split — _pending training_
+### Model A on the test split (444 held-out images, 264 labelled objects)
 
-| File | Content |
-| --- | --- |
-| `metrics.json` | overall and per-class P, R, F1, AP50, AP50-95, TP/FP/FN, operating threshold |
-| `confusion_matrix.png`, `confusion_matrix_normalized.png` | confusion matrix |
-| `pr_curve.png`, `f1_confidence_curve.png`, `training_curves.png` | curves |
+Selected run **E1**, confidence **0.145** (max F1 on validation), CLAHE off, IoU 0.5.
+
+| Class | Objects | AP@0.5 | AP@0.5:0.95 | Precision | Recall | F1 | TP / FP / FN |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| pothole | 75 | 0.197 | 0.083 | 0.32 | 0.23 | 0.27 | 17 / 36 / 58 |
+| severe_road_damage | 189 | 0.358 | 0.162 | 0.44 | 0.35 | 0.39 | 66 / 85 / 123 |
+| **overall** | **264** | **0.278** | **0.122** | **0.41** | **0.31** | **0.35** | 83 / 121 / 181 |
+
+Confusion matrix (rows = true, columns = predicted): the two classes are almost never confused with each
+other (3 of 264); nearly all errors are against *background*: missed objects (181) or false alarms (121).
 
 ![Confusion matrix](../ml/reports/confusion_matrix.png)
 ![Precision-recall](../ml/reports/pr_curve.png)
 
-### Optimisation series — _pending training_
+**How good is this?** Modest, and expected for the setup: a nano model (2.6 M parameters), 1,800 training
+images, 40 epochs on a laptop CPU. RDD2022 is a hard benchmark: crack boxes are long, thin and labelled
+inconsistently (see the error analysis below). The test score is
+close to the validation score (0.339), so the model is not overfitting the validation choices.
 
-`optimization_table.md` and `optimization_chart.png` (E0 → E7, validation split, with CPU speed).
-E5 = confidence threshold tuned at max F1; E6 = CLAHE off vs auto, both on the selected run.
+### Optimisation series (validation split, 448 images)
 
-### Preprocessing before vs after — _pending training_
+| Step | Change | mAP@0.5 | mAP@0.5:0.95 | F1 | CPU ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| E0 | Baseline: COCO-pretrained YOLO11n, 20 epochs | 0.289 | 0.117 | 0.364 | 45 |
+| **E1 ★** | Longer training: 40 epochs, early stopping | **0.334** | **0.137** | 0.427 | 46 |
+| E5 | Confidence threshold 0.25 → 0.145 (max F1) | 0.334 | 0.137 | 0.378 → **0.427** | 46 |
+| E6 | CLAHE auto → **off** | 0.334 → **0.339** | – | 0.427 → 0.430 | 46 |
 
-`ablation.json`, `ablation_bar.png` (mAP and F1 with CLAHE off / auto / on, overall and on dark images)
-and `preprocessing_before_after.png`. Report the result as measured — if CLAHE does not help overall but
-helps on dark images, say exactly that.
+Longer training gave the biggest gain (+16% relative mAP@0.5); tuning the threshold raised F1 by 13%
+at no cost. Full table: `ml/reports/optimization_table.md`; chart: `optimization_chart.png`.
 
-### Speed on the presentation laptop — **measured**
+### Preprocessing before vs after (CLAHE ablation, test split)
 
-`latency.json` and `speed_chart.png` hold mean and 95th-percentile time per frame for each model, runtime
-(PyTorch / ONNX / OpenVINO) and input size, plus the end-to-end system time (preprocessing + both models
-+ merging). Model B has already been measured on the development laptop (AMD Ryzen, CPU only): OpenVINO
-was the fastest runtime. **Re-run `python ml/evaluate.py latency` on the laptop you present with** —
-timings vary between machines and between runs.
+| CLAHE | mAP@0.5 all | F1 all | mAP@0.5 dark images (13) |
+| --- | ---: | ---: | ---: |
+| **off (app default)** | **0.278** | **0.355** | **0.435** |
+| auto (dark/low-contrast only) | 0.265 | 0.348 | 0.284 |
+| always on | 0.196 | 0.252 | 0.284 |
+
+CLAHE made the model **worse**, even on dark images. Our explanation: the model was trained on
+un-enhanced images, so CLAHE shifts the input away from what it learned, and it amplifies asphalt texture
+that then looks like cracks. The decision was made on validation (E6) and confirmed on test, so the app
+keeps CLAHE **off** by default and offers it as an option in the Vision Lab. The dark subset is small (13
+images), so that column is indicative only. `ablation_bar.png`, `preprocessing_before_after.png`.
+
+### Speed on the presentation laptop (AMD Ryzen, CPU only)
+
+| Model | PyTorch 640 | ONNX 640 | OpenVINO 640 |
+| --- | ---: | ---: | ---: |
+| Model A (road damage) | 42.8 ms | 38.5 ms | **33.3 ms** |
+| Model B (COCO obstructions) | 45.7 ms | 39.4 ms | **33.7 ms** |
+
+End to end (preprocessing + both models + merging, auto-selected OpenVINO): **57.6 ms per frame ≈ 17 FPS**
+(95th percentile 67 ms). The app only needs 2 frames per second during a trip, so there is ample headroom.
+Re-run `python ml/evaluate.py latency` on the laptop you present with. `latency.json`, `speed_chart.png`.
 
 ![Speed](../ml/reports/speed_chart.png)
 
-### Model B and smoothing — _pending test data / demo video_
+### Temporal smoothing (36 s demo drive, 72 analysed frames)
 
-`model_b.json` (with vs without the driving-corridor rule) and `smoothing.json` (alerts per minute with
-vs without 2-of-3 voting). For smoothing, watch the demo video and set each alert's `verdict` to `true` or
-`false` to report false alarms per minute.
+| | Alerts | Alerts per minute |
+| --- | ---: | ---: |
+| Every frame with a detection | 39 | 65 |
+| **2-of-3 frames + 20 s cooldown** | **4** | **6.7** |
 
-### Error analysis — _pending training_
+Smoothing cut alerts by 90%, the difference between an app a driver ignores and one they can use.
+`smoothing.json` lists the 4 remaining alerts; watch the video and mark each `true`/`false` to report false
+alarms per minute.
 
-`error_gallery/` (false alarms, missed hazards, wrong class — with captions) and `error_analysis.md`
-(miss rate by object size and by lighting, false alarms by class). Add 3–5 sentences of interpretation
-below once the gallery exists.
+### Model B (obstructions)
 
-> _Team interpretation:_ …
+Not measured: we did not label an obstruction test set. Model B is the unchanged COCO model, so its
+accuracy is the published COCO accuracy; our contribution is the driving-corridor rule, demonstrated on
+the sample street image in the Vision Lab. This is a stated limitation.
+
+### Error analysis
+
+`error_gallery/` (false alarms, misses, wrong class, with captions) and `error_analysis.md`.
+
+| Object size (share of image) | Objects | Missed |
+| --- | ---: | ---: |
+| small (< 0.5%) | 16 | 88% |
+| medium (0.5–5%) | 148 | 80% |
+| large (> 5%) | 100 | 45% |
+
+> **Interpretation.** Most errors are not the model failing to see damage but a mismatch with how it was
+> labelled. On cracked road, the model often draws one large box where the annotator drew several small
+> ones (or the reverse); at IoU 0.5 that single detection counts as one false alarm *and* several misses.
+> Many "false alarms" are real-looking damage that was simply not labelled: broken road edges, gravel
+> shoulders, patched asphalt. Genuine misses are mostly small or distant potholes (88% of small objects
+> missed), which a 640-pixel nano model resolves poorly. The fixes are more training images, a larger
+> model or higher input resolution (presets E2–E3, need a GPU), and labels from Philippine roads.

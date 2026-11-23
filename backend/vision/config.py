@@ -96,7 +96,9 @@ class VisionSettings:
     conf_b: float = field(default_factory=lambda: _env_float("ANIROUTE_OBSTRUCTION_CONF_THRESHOLD", 0.45))
     iou: float = field(default_factory=lambda: _env_float("ANIROUTE_NMS_IOU", 0.5))
     device: str = field(default_factory=lambda: os.getenv("ANIROUTE_DEVICE", "cpu"))
-    # Preprocessing
+    # Preprocessing. Default CLAHE mode "off": the validation ablation (ml/reports/optimization.json, E6)
+    # showed CLAHE lowers mAP on our road images, so it is opt-in ("auto"/"on") per request.
+    clahe_mode: str = field(default_factory=lambda: os.getenv("ANIROUTE_CLAHE", "off"))
     clahe_clip_limit: float = field(default_factory=lambda: _env_float("ANIROUTE_CLAHE_CLIP", 2.0))
     clahe_tile: int = field(default_factory=lambda: _env_int("ANIROUTE_CLAHE_TILE", 8))
     dark_luma_threshold: float = field(default_factory=lambda: _env_float("ANIROUTE_DARK_LUMA", 95.0))

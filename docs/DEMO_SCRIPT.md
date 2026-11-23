@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | 0:00 | **Vision Lab → Image** | "This is the detector on its own." Click a held-out **test** image. Point at boxes, class, confidence, and the *Model A / Model B* column. |
 | 0:45 | same | Drag the **confidence slider** down then up: "the threshold trades false alarms for misses — we chose ours at the F1 peak on the validation set." |
-| 1:15 | same, scroll | **Preprocessing step by step**: original → CLAHE → 640×640 model input. Switch CLAHE **Off/On** on a dark image and show the change. |
+| 1:15 | same, scroll | **Preprocessing step by step**: original → CLAHE → 640×640 model input. Switch CLAHE **Off → Auto → On** on a dark image: it looks brighter to us, but the ablation showed the model does worse, which is why it is off by default. |
 | 2:00 | **Vision Lab → Video** | Play the demo drive. Boxes follow the road; per-class counts and the timeline fill in; the badge shows real analysed FPS. |
 | 3:00 | **Vision Lab → Webcam** *(optional)* | Point the webcam at a printed pothole photo or a person walking in front: obstruction box appears only inside the purple driving corridor. |
 | 3:30 | **Plan** | Pickup = the venue, delivery = a nearby market; tomatoes, 250 kg, small truck. Live route options with crop-risk scores. Choose the recommended route → **Use this route**. |

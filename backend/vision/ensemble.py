@@ -192,12 +192,12 @@ class HazardDetector:
         }
 
     # ------------------------------------------------------------------ inference
-    def detect(self, image_bgr: np.ndarray, *, conf: float | None = None, clahe: ClaheMode = "auto",
+    def detect(self, image_bgr: np.ndarray, *, conf: float | None = None, clahe: ClaheMode | None = None,
                keep_stage_images: bool = False, use_roi: bool = True) -> DetectionResult:
         s = self.settings
         started = time.perf_counter()
         pipeline = run_pipeline(
-            image_bgr, size=s.imgsz, clahe=clahe, clip_limit=s.clahe_clip_limit, tile=s.clahe_tile,
+            image_bgr, size=s.imgsz, clahe=clahe or s.clahe_mode, clip_limit=s.clahe_clip_limit, tile=s.clahe_tile,
             dark_threshold=s.dark_luma_threshold, contrast_threshold=s.low_contrast_threshold,
             keep_stage_images=keep_stage_images,
         )

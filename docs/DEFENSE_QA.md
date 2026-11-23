@@ -1,6 +1,7 @@
 # Defense — likely panel questions and honest answers
 
-Replace every *[number]* with the value from `ml/reports/` before the defense.
+Numbers come from `ml/reports/` (see `docs/EVALUATION.md`). Headline: test mAP@0.5 **0.278**, precision
+**0.41**, recall **0.31** on 444 held-out images; **17 FPS** end to end on the laptop CPU.
 
 ## Problem and relevance
 
@@ -31,21 +32,22 @@ much slower.
 
 **6. What does "pretrained" mean, and what exactly did you train?**
 Model A starts from YOLO11 weights trained on COCO (118k photos). We fine-tuned it on labelled pothole and
-road-damage images so its head predicts our two classes — that training is ours (runs E0–E7). Model B is
+road-damage images (RDD2022, India subset) so its head predicts our two classes — that training is ours
+(runs E0 and E1, on a laptop CPU). Model B is
 the COCO model used without training, plus our driving-corridor rule.
 
 **7. Why two models instead of one?**
 COCO already recognises people, animals and vehicles very well — retraining that would need thousands of
 new labels for no gain. Road damage is not in COCO, so it needs fine-tuning. Running both on the same
-preprocessed frame costs *[system ms]* ms per frame on the laptop CPU.
+preprocessed frame costs about 58 ms per frame on the laptop CPU (17 FPS, OpenVINO).
 
 **8. Explain the YOLO pipeline in 30 seconds.**
 Backbone extracts features; neck merges them at several scales; head predicts boxes, class scores and
 confidence; we drop boxes under the threshold; non-maximum suppression removes duplicates.
 
 **9. What preprocessing do you do and why?**
-EXIF orientation fix; CLAHE on the lightness channel only when the frame is dark or low-contrast; letterbox
-to 640×640 keeping the aspect ratio. Training also uses augmentation (mosaic, colour jitter, flips) — that
+EXIF orientation fix and letterbox to 640×640 keeping the aspect ratio. CLAHE contrast enhancement is
+implemented and tested, but off by default because our ablation showed it hurt (question 11). Training also uses augmentation (mosaic, colour jitter, flips) — that
 is separate from preprocessing.
 
 **10. What is CLAHE, mathematically?**
@@ -54,18 +56,22 @@ CLAHE does it per 8×8 tile (adaptive) and clips each tile's histogram at a limi
 redistributing the clipped counts, so noise is not over-amplified; tiles are blended bilinearly.
 
 **11. Did CLAHE actually help?**
-*[From ablation.json: mAP with CLAHE off / auto / on, overall and on dark images.]* If it helps only on
-dark images, that is why the app applies it automatically only to dark frames.
+No, and that is a result we report rather than hide. On validation, CLAHE auto scored 0.334 mAP@0.5 vs
+0.339 off, so we turned it off before testing. On test: off 0.278, auto 0.265, always on 0.196; even on the
+13 dark images, off was better (0.435 vs 0.284). The model was trained on un-enhanced images, so CLAHE moves
+the input away from what it learned and amplifies asphalt texture. It stays available as an option.
 
 **12. How does the driving-corridor rule work?**
 A trapezoid in front of the vehicle (from 40% down the frame to the bottom, widening from 20% to 50% of the
 width). A COCO object counts as an obstruction only if the bottom-centre of its box — where it touches
 the road — is inside, and the box is at least 12% of the frame height (close). Parked cars at the
-roadside are ignored. *[model_b.json: precision with vs without the rule.]*
+roadside are ignored. We did not label an obstruction test set, so this rule is a design choice we can
+demonstrate on the sample street image (Vision Lab), not a measured accuracy number — a stated limitation.
 
 **13. Why 2 of 3 frames?**
 A single frame can show a shadow or wet patch as a pothole. Requiring the same hazard in 2 of the last 3
-analysed frames (~1.2 s) removes most one-frame false alarms for a small delay. *[smoothing.json]*
+analysed frames (~1.2 s) removes most one-frame false alarms for a small delay. On the 36-second demo
+drive it cut alerts from 39 (65 per minute) to 4 (6.7 per minute).
 
 ## Evaluation
 
@@ -83,8 +89,8 @@ For a driver, too many false alarms make them ignore the app (precision); missed
 remaining false alarms, so we can afford a slightly lower threshold for better recall.
 
 **17. How did you choose the confidence threshold?**
-The F1-vs-confidence curve on the validation split; we took the peak (*[value]*), then reported test
-results at that fixed threshold.
+The F1-vs-confidence curve on the validation split; we took the peak (0.145), then reported test
+results at that fixed threshold. Moving from the default 0.25 raised validation F1 from 0.378 to 0.427.
 
 **18. How do you know the test score is not inflated?**
 Test images are never trained on or used for choices; near-duplicates of training images are removed from
@@ -92,19 +98,23 @@ val/test by perceptual hashing; the threshold and best run are chosen on validat
 
 **19. Read the confusion matrix for us.**
 Rows are the true class, columns the prediction. Diagonal = correct. The last column is missed objects,
-the last row false alarms. *[Point at the largest off-diagonal cell and explain it.]*
+the last row false alarms. Pothole and road damage are almost never confused (3 cases); the big cells are
+severe road damage vs background: 123 missed and 85 false alarms, mostly because the model boxes a cracked
+area differently from how the annotator split it.
 
 **20. What were your optimisation steps and what helped most?**
-E0 baseline → E1 longer training → E2 bigger model → E3 higher resolution → E4 augmentation; E5 threshold
-tuning; E6 CLAHE; plus ONNX/OpenVINO export for speed. *[Best gain and selected run from
-optimization_table.md; OpenVINO vs PyTorch speed from latency.json.]*
+Four controlled steps, one change at a time: (1) E0 baseline, 20 epochs from COCO weights; (2) E1 longer
+training, 40 epochs with early stopping; the better run on **validation** is deployed (E1,
+val mAP@0.5 0.289 → 0.334, +16%); (3) confidence threshold tuned at max F1 on validation; (4) CLAHE
+ablation (off / auto / on) and ONNX/OpenVINO export for speed (OpenVINO 33 ms vs PyTorch 43 ms per model, 22% faster).
+Bigger models and higher resolution (presets E2–E4 in `train.py`) are ready but need a GPU — future work.
 
 **21. Why didn't you use automatic hyperparameter tuning?**
-Ultralytics' genetic tuner needs hundreds of training runs — beyond free Colab. We ran controlled,
+Ultralytics' genetic tuner needs hundreds of training runs; one of our runs already takes hours on a CPU. We ran controlled,
 one-change-at-a-time experiments instead, which are also easier to explain.
 
 **22. How fast is it?**
-*[latency.json: end-to-end ms and FPS on this laptop.]* The app analyses about 1–2 frames per second during
+58 ms per frame end to end (17 FPS) on this laptop's CPU with OpenVINO. The app analyses about 1–2 frames per second during
 a trip, which is enough because hazards stay in view for several seconds.
 
 ## Errors, limitations, future work
@@ -118,9 +128,9 @@ Public labelled data for flooded roads and landslides is small and inconsistent;
 Drivers report standing water manually. Future work: collect and label local images.
 
 **25. Will it work on Philippine roads?**
-Training data is mostly foreign (RDD2022: Japan, India, Czech Republic, Norway, USA, China). *[If you have
-test_local: "On our N local photos the mAP@0.5 was X, lower than the public test set — expected domain
-shift."]* Fine-tuning on local images is the most important next step.
+Not proven yet. Training data is from India (RDD2022), chosen as the closest match to Philippine provincial
+roads, but we have no labelled Philippine test set, so expect lower accuracy here (domain shift).
+Collecting and labelling local photos and fine-tuning on them is the most important next step.
 
 **26. How does a detection change the route?**
 A confirmed hazard is saved with GPS. Every route that passes within 75 m gets a road-risk increase
@@ -133,11 +143,13 @@ real deployment, evidence should be encrypted, access-controlled and deleted aft
 
 **28. Can it run on a phone?**
 The browser already uses the phone camera and sends frames to the server. For on-device inference, the
-nano model exported to ONNX/TFLite would run on recent phones; we measured *[X]* ms on a laptop CPU.
+nano model exported to ONNX/TFLite would run on recent phones; we measured 33 ms per model on a laptop CPU.
 
 **29. What would you do with more time?**
 Local Philippine dataset and labels; standing-water and landslide classes; distance-to-hazard estimation;
 on-device inference; shared hazard map with LGUs; field trial to measure actual spoilage reduction.
 
 **30. What was the hardest part?**
-*[Your honest answer — e.g. merging datasets with different class names, or false alarms from shadows.]*
+Training without a GPU: one epoch takes about 7 minutes on the laptop CPU, so we could afford only two
+controlled runs, and a Windows Update restart interrupted one (we resumed from its checkpoint). The
+official RDD2022 download was also offline, so we used its public Hugging Face mirror. *[Adjust to your own words.]*

@@ -1,0 +1,23 @@
+{
+  "split": "test",
+  "confidence": 0.145,
+  "dark_luma_threshold": 95.0,
+  "subsets": {
+    "normal_light": {
+      "images": 431,
+      "instances": 254,
+      "map50": 0.2725,
+      "precision": 0.404,
+      "recall": 0.315,
+      "f1": 0.354
+    },
+    "dark": {
+      "images": 13,
+      "instances": 10,
+      "map50": 0.4347,
+      "precision": 0.5,
+      "recall": 0.3,
+      "f1": 0.375
+    }
+  }
+}

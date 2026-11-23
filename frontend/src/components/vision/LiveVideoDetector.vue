@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
   clahe?: ClaheMode
   corridor?: CorridorSettings | null
   intervalMs?: number
-}>(), { src: null, stream: null, conf: null, clahe: 'auto', corridor: null, intervalMs: 500 })
+}>(), { src: null, stream: null, conf: null, clahe: undefined, corridor: null, intervalMs: 500 })
 
 const video = ref<HTMLVideoElement | null>(null)
 const detections = ref<VisionDetection[]>([])

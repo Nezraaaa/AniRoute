@@ -1,0 +1,10 @@
+{
+  "id": "E1",
+  "title": "Longer training",
+  "change": "40 epochs with early stopping (patience 20)",
+  "model": "yolo11n.pt",
+  "epochs": 40,
+  "imgsz": 640,
+  "fraction": 1.0,
+  "device": "cpu"
+}

@@ -184,7 +184,7 @@ export async function detectImage(file: Blob, filename: string, options: DetectO
   const form = new FormData()
   form.append('file', file, filename)
   if (options.conf != null) form.append('conf', String(options.conf))
-  form.append('clahe', options.clahe ?? 'auto')
+  if (options.clahe) form.append('clahe', options.clahe)
   form.append('return_stages', String(options.returnStages ?? true))
   return mapDetectResult(await postForm<ApiDetectResult>(appConfig.paths.visionDetect, form))
 }
@@ -193,7 +193,7 @@ export async function detectFrame(frameDataUrl: string, options: DetectOptions &
   return mapDetectResult(await postJson<ApiDetectResult>(appConfig.paths.visionDetectFrame, {
     frame_data_url: frameDataUrl,
     conf: options.conf ?? undefined,
-    clahe: options.clahe ?? 'auto',
+    clahe: options.clahe,
     return_stages: options.returnStages ?? false,
     annotate: options.annotate ?? false,
   }))

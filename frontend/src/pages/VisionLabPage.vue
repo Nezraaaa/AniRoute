@@ -29,7 +29,7 @@ const result = ref<DetectResult | null>(null)
 const detecting = ref(false)
 const detectError = ref('')
 const conf = ref(0.35)
-const clahe = ref<ClaheMode>('auto')
+const clahe = ref<ClaheMode>('off')
 const showCorridor = ref(true)
 const showAnnotated = ref(false)
 const videoSrc = ref<string | null>(null)
@@ -300,7 +300,7 @@ onBeforeUnmount(() => {
             <CardTitle>Preprocessing, step by step</CardTitle>
             <CardDescription>
               Lightness mean {{ result.preprocessing.luminanceMean }} · contrast {{ result.preprocessing.luminanceStd }}.
-              Auto mode applies CLAHE only to dark or low-contrast frames.
+              CLAHE is off by default (our ablation showed it lowers accuracy on these road images); Auto applies it only to dark or low-contrast frames.
             </CardDescription>
           </CardHeader>
           <CardContent><PreprocessStages :stages="result.stages" /></CardContent>
