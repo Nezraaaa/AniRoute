@@ -70,6 +70,8 @@ export interface RouteOption {
   explanation: string
   recommended: boolean
   extraMinutes: number
+  /** Which of the three offered options this road is (Recommended / Fastest / Safest), with its title. */
+  option?: { key: 'optimal' | 'fastest' | 'safer'; title: string; note: string } | null
   knownHazards: HazardPin[]
   source: DataSource
 }

@@ -11,8 +11,6 @@ const props = defineProps<{
   selected: boolean
   crop: string
   loading?: boolean
-  /** This option uses the same road as another option (e.g. the recommended road is also the fastest). */
-  sameRoadAs?: 'recommended' | 'fastest' | null
 }>()
 const emit = defineEmits<{
   select: [id: string]
@@ -46,7 +44,7 @@ const extraWins = computed(() => (props.route.categories ?? [])
   .filter((win): win is 'fastest' | 'safer' => (win === 'fastest' || win === 'safer') && win !== props.route.category))
 
 const shortReason = computed(() => {
-  if (props.sameRoadAs) return `Same road as the ${props.sameRoadAs} route`
+  if (props.route.option?.note) return props.route.option.note
   if (props.route.category === 'alternative') return `Different road · +${props.route.extraMinutes} min vs fastest`
   return props.route.category === 'optimal' ? 'Best balance of time, distance, crop and road hazards'
     : props.route.category === 'fastest' ? 'Shortest estimated travel time' : 'Fewest curves, stops and confirmed hazards'
@@ -79,8 +77,8 @@ function factorLabel(name: string, value: number) {
         <div class="route-name-wrap">
           <span :class="['route-category-mark', `mark-${route.category}`]" aria-hidden="true"></span>
           <div>
-            <h4 class="route-card-title">{{ categoryText[route.category] }}</h4>
-            <span v-if="extraWins.length && !sameRoadAs" class="route-win-chips">
+            <h4 class="route-card-title">{{ route.option?.title ?? categoryText[route.category] }}</h4>
+            <span v-if="extraWins.length" class="route-win-chips">
               <span v-for="win in extraWins" :key="win" :class="['route-win-chip', `route-win-chip-${win}`]">{{ win === 'fastest' ? 'Fastest' : 'Safest' }}</span>
             </span>
             <p class="route-short-reason">{{ shortReason }}</p>
@@ -117,7 +115,7 @@ function factorLabel(name: string, value: number) {
       <div class="route-floating-header">
         <div>
           <span class="detail-label">Selected route</span>
-          <strong>{{ categoryText[route.category] }}</strong>
+          <strong>{{ route.option?.title ?? categoryText[route.category] }}</strong>
         </div>
         <button type="button" class="route-floating-close" aria-label="Close route details" @click="expanded = false">
           <X :size="18" aria-hidden="true" />

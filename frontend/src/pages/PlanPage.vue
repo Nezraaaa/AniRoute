@@ -23,27 +23,15 @@ type OptionKey = 'optimal' | 'fastest' | 'safer'
 const optionOrder: OptionKey[] = ['optimal', 'fastest', 'safer']
 const selectedOption = ref<OptionKey>('optimal')
 
-// Always three choices: Recommended, Fastest, Safest. Each points at the road that truly wins that
-// category; when one road wins several, the card says it is the same road instead of inventing one.
-const routeOptions = computed(() => {
-  const roads = displayRoutes.value
-  if (!roads.length) return []
-  const winner = (key: OptionKey) => roads.find(road => (road.categories ?? [road.category]).includes(key))
-    ?? roads.find(road => road.recommended) ?? roads[0]!
-  const recommended = winner('optimal')
-  const fastest = winner('fastest')
-  return optionOrder.map(key => {
-    const road = winner(key)
-    const sameRoadAs: 'recommended' | 'fastest' | null = key === 'optimal' ? null
-      : road.id === recommended.id ? 'recommended'
-        : key === 'safer' && road.id === fastest.id ? 'fastest' : null
-    return { key, road, sameRoadAs, card: { ...road, category: key, recommended: key === 'optimal' } as RouteOption }
-  })
-})
+// Three choices on three different roads, chosen and titled by the backend (Recommended, Fastest or
+// "Fastest alternative", Safest or "Safest alternative").
+const routeOptions = computed(() => optionOrder.flatMap(key => {
+  const road = store.routes.find(item => item.option?.key === key)
+  return road ? [{ key, road, card: { ...road, category: key, recommended: key === 'optimal' } as RouteOption }] : []
+}))
 
-// The map draws the selected road in the selected option's colour (green, orange or blue).
-const mapRoutes = computed(() => store.routes.map(route => (
-  route.id === store.state.selectedRouteId ? { ...route, category: selectedOption.value } : route)))
+// Each offered road is drawn in its option's colour: green, orange, blue.
+const mapRoutes = computed(() => store.routes.map(route => (route.option ? { ...route, category: route.option.key } : route)))
 
 function selectOption(key: OptionKey, roadId: string) {
   selectedOption.value = key
@@ -263,7 +251,6 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
                 v-for="option in routeOptions"
                 :key="option.key"
                 :route="option.card"
-                :same-road-as="option.sameRoadAs"
                 :selected="selectedOption === option.key && store.state.selectedRouteId === option.road.id"
                 :crop="store.trip.crop"
                 :loading="store.state.loadingRoutes"

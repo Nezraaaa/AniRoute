@@ -271,7 +271,8 @@ function createMarkers(shouldFitBounds = true) {
   const boundPoints = selectedLines.flatMap(route => routeCoordinates(route))
   if (origin) boundPoints.push(origin)
   destinations.forEach(({ coordinate }) => boundPoints.push(coordinate))
-  if (props.currentLocation) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
+  // During a trip the camera frames the route itself, never the device's own GPS position.
+  if (props.currentLocation && !props.active) boundPoints.push([props.currentLocation.longitude, props.currentLocation.latitude])
   if (!boundPoints.length || !shouldFitBounds) return
 
   if (props.active && cameraMode.value === 'follow' && followCamera(instance)) return
@@ -304,12 +305,12 @@ function bearingDeg(a: MapPoint, b: MapPoint) {
   return Math.atan2(y, x) / toRad
 }
 
-/** Tilted 3D camera at the vehicle (or the route start), turned to face the road ahead. */
+/** Tilted 3D camera at the start of the route, turned to face the road ahead. */
 function followCamera(instance: MapInstance): boolean {
   const route = routeLines().find(item => item.id === props.selectedRouteId) ?? routeLines()[0]
   const line = route ? routeCoordinates(route) : []
-  const vehicle = pointFromCoordinates(props.currentLocation)
-  const anchor = vehicle ?? line[0] ?? selectedMapPoints().origin
+  // Follow the trip's own route from its start (the pickup point), not the device's GPS position.
+  const anchor = line[0] ?? selectedMapPoints().origin
   if (!anchor) return false
   let bearing = instance.getBearing()
   if (line.length > 1) {

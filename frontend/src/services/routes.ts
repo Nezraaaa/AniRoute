@@ -15,6 +15,7 @@ interface ApiRoute {
   explanation: string
   recommended: boolean
   extra_minutes?: number
+  option?: RouteOption['option']
   known_hazards: Array<{
     id: string
     name: string
@@ -40,7 +41,8 @@ interface RecalculateResponse extends ApiRouteResponse {
 function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
   return {
     id: route.route_id,
-    category: route.category,
+    // The offered option decides the colour everywhere (green recommended, orange fastest, blue safest).
+    category: route.option?.key ?? route.category,
     categories: route.categories,
     geometry: route.geometry,
     travelTimeMinutes: route.travel_time_minutes,
@@ -53,6 +55,7 @@ function mapApiRoute(route: ApiRoute, source: DataSource): RouteOption {
     explanation: route.explanation,
     recommended: route.recommended,
     extraMinutes: route.extra_minutes ?? 0,
+    option: route.option ?? null,
     knownHazards: (route.known_hazards ?? []).map(hazard => ({
       id: hazard.id, name: hazard.name, coordinates: hazard.coordinates, note: hazard.note, hazardType: hazard.hazard_type,
     })),

@@ -57,7 +57,7 @@ def test_live_calculation_returns_provider_geometry_and_api_source(monkeypatch: 
         main.Coordinates(latitude=14.2117, longitude=121.1653),
     ]
     monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: stops)
-    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops, alternatives=True: live_provider_routes())
 
     result = main.calculate_routes(trip_input(
         originCoordinates={"latitude": 16.402, "longitude": 120.596},
@@ -83,7 +83,7 @@ def test_live_recalculation_keeps_live_source(monkeypatch: pytest.MonkeyPatch, d
         main.Coordinates(latitude=16.402, longitude=120.596),
         main.Coordinates(latitude=14.2117, longitude=121.1653),
     ])
-    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops, alternatives=True: live_provider_routes())
     payload = main.RecalculateInput(
         trip=trip_input(), active_route_id="route-2", hazard_type="pothole",
         road_segment_id="route-2@unlocated", observation_id="observation-1",
@@ -101,7 +101,7 @@ def test_confirmed_hazard_on_active_route_changes_live_recommendation(monkeypatc
         main.Coordinates(latitude=16.402, longitude=120.596),
         main.Coordinates(latitude=14.2117, longitude=121.1653),
     ])
-    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops: live_provider_routes())
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops, alternatives=True: live_provider_routes())
     before = main.calculate_routes(trip_input())
     assert before["recommended_route_id"] == "route-1"
 
@@ -206,7 +206,23 @@ def test_detour_alternatives_keep_real_roads_and_reject_spurs(monkeypatch: pytes
     assert routes.count(west) == 1   # the same road found twice is kept once
 
 
-def test_only_category_winning_routes_are_listed_but_the_active_route_is_kept(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
+def test_three_options_use_three_different_roads_with_truthful_titles():
+    def road(route_id, minutes, safety, recommended=False):
+        return {"route_id": route_id, "travel_time_minutes": minutes, "recommended": recommended,
+                "risk_factors": {"safety": safety}}
+
+    # The recommended road is also the fastest and the safest: the other two options must still be
+    # different roads, and their titles must say they are alternatives.
+    options = main._assign_options([road("r1", 281, 10, True), road("r2", 318, 20), road("r3", 347, 30)])
+    assert {key: value["key"] for key, value in options.items()} == {"r1": "optimal", "r2": "fastest", "r3": "safer"}
+    assert options["r2"]["title"] == "Fastest alternative" and options["r3"]["title"] == "Safest alternative"
+
+    # When different roads really win, they get the plain titles.
+    options = main._assign_options([road("r1", 40, 30, True), road("r2", 35, 40), road("r3", 45, 10)])
+    assert options["r2"]["title"] == "Fastest route" and options["r3"]["title"] == "Safest route"
+
+
+def test_driver_route_stays_listed_after_recalculation(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
     stops = [main.Coordinates(latitude=16.402, longitude=120.596), main.Coordinates(latitude=14.2117, longitude=121.1653)]
     monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: stops)
     monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops, alternatives=True: live_provider_routes())
@@ -214,10 +230,6 @@ def test_only_category_winning_routes_are_listed_but_the_active_route_is_kept(mo
                              "origin": "Baguio City", "destination": "Calamba"})
 
     listed = main._live_routes(trip)["routes"]
-    assert listed and all(route["categories"] for route in listed)          # no unlabelled "alternative" roads
-    dropped = {"route-1", "route-2", "route-3"} - {route["route_id"] for route in listed}
-    assert dropped, "fixture should contain at least one road that wins nothing"
-
-    kept_id = sorted(dropped)[0]
-    with_active = main._live_routes(trip, keep_route_id=kept_id)["routes"]
-    assert kept_id in {route["route_id"] for route in with_active}
+    assert len({route["route_id"] for route in listed}) == len(listed) == 3
+    assert [route["option"]["key"] for route in listed] == ["optimal", "fastest", "safer"]
+    assert main._live_routes(trip, keep_route_id="route-3")["routes"]

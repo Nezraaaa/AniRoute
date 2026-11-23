@@ -142,9 +142,11 @@ OSRM gives the road options (we add detours on each side when it returns only on
 they are genuinely different roads). *Fastest* = least travel time. *Safest* = lowest road-safety risk,
 measured from each road's geometry: bends per km (resampled every 50 m; switchbacks bruise produce),
 intersections per km (stop-and-go braking) and camera-confirmed hazards. *Recommended* = best balance of
-time, distance, crop fragility and road safety. When one road wins several, the cards say "same road":
-for Baguio → Calamba the direct road is fastest *and* safest, so we do not invent a different one. The
-weights are transparent heuristics, not measured accident rates.
+time, distance, crop fragility and road safety. The three options are always three different roads.
+If the recommended road is itself the fastest (or safest), the orange (or blue) card shows the best
+*other* road and is titled "Fastest alternative" / "Safest alternative", e.g. Baguio → Calamba:
+recommended 281 min, fastest alternative 317 min, safest alternative 343 min. The weights are transparent
+heuristics, not measured accident rates.
 
 **27. Privacy?**
 Frames are processed in memory and discarded; only the frame the driver confirms is stored with GPS. In a

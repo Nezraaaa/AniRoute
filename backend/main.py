@@ -265,10 +265,10 @@ def _request_routing_routes(stops: list[Coordinates], alternatives: bool = True)
 # OSRM often returns a single route for long trips. To still offer real choices, we also route through a
 # detour point on each side of the direct line (fractions of the trip length) and keep only genuinely
 # different roads: no out-and-back spurs, little overlap with routes we already have, not absurdly slow.
-VIA_OFFSETS = (0.08, -0.08, -0.15, 0.15, 0.04, -0.04)
+VIA_OFFSETS = (0.08, -0.08, 0.04, -0.04, -0.15, 0.15, 0.12, -0.12)
 MAX_ALTERNATIVE_SLOWDOWN = 1.6
 MAX_SHARED_FRACTION = 0.9
-TARGET_ROUTES = 3
+TARGET_ROUTES = 5   # score up to five real roads, then offer the best three distinct ones
 
 
 def _route_points(raw_route: dict) -> list[tuple[float, float]]:
@@ -350,6 +350,49 @@ def _risk_label(score: int) -> str:
     return "higher" if score >= 60 else "moderate" if score >= 35 else "lower"
 
 
+def _assign_options(routes: list[dict]) -> dict[str, dict]:
+    """Three options on three different roads, each labelled truthfully.
+
+    Recommended = best overall. Fastest = least time; if the recommended road is itself the fastest, the
+    orange option is the quickest *other* road and is called "Fastest alternative". Safest works the same
+    way, using the road-safety risk, among roads not already offered.
+    """
+    recommended = next(route for route in routes if route["recommended"])
+    time = lambda route: route["travel_time_minutes"]                       # noqa: E731
+    risk = lambda route: (route["risk_factors"]["safety"], route["travel_time_minutes"])  # noqa: E731
+    options = {recommended["route_id"]: {"key": "optimal", "title": "Recommended route",
+                                         "note": "Best balance of time, distance, crop and road safety"}}
+    others = [route for route in routes if route["route_id"] != recommended["route_id"]]
+    if not others:
+        return options
+
+    fastest_overall = min(routes, key=time)
+    if fastest_overall["route_id"] != recommended["route_id"]:
+        fastest, title = fastest_overall, "Fastest route"
+        note = f"{time(recommended) - time(fastest)} min quicker than recommended"
+    else:
+        fastest, title = min(others, key=time), "Fastest alternative"
+        note = f"Recommended road is also the fastest · quickest other road, +{time(fastest) - time(recommended)} min"
+    options[fastest["route_id"]] = {"key": "fastest", "title": title, "note": note}
+
+    remaining = [route for route in others if route["route_id"] not in options]
+    if not remaining:
+        return options
+    safest_overall = min(routes, key=risk)
+    if safest_overall["route_id"] not in options:
+        safest, title = safest_overall, "Safest route"
+        note = f"Lowest road-safety risk ({risk(safest)[0]} vs {risk(recommended)[0]} recommended)"
+    else:
+        safest = min(remaining, key=risk)
+        title = "Safest alternative"
+        best_other = min(others, key=risk)
+        note = (f"Lowest-risk other road · safety risk {risk(safest)[0]}"
+                if best_other["route_id"] == safest["route_id"]
+                else f"Lowest-risk road not shown above · safety risk {risk(safest)[0]}")
+    options[safest["route_id"]] = {"key": "safer", "title": title, "note": note}
+    return options
+
+
 def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
     if not LIVE_ROUTING_ENABLED:
         raise HTTPException(status_code=503, detail="Live route engine is disabled. Set ANIROUTE_LIVE_ROUTING_ENABLED=true.")
@@ -357,7 +400,7 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
     stops = _resolve_trip_stops(trip)
     raw_routes = _with_detour_alternatives(stops, _request_routing_routes(stops))
     candidates: list[dict] = []
-    for raw_route in raw_routes[:3]:
+    for raw_route in raw_routes[:TARGET_ROUTES]:
         geometry = raw_route.get("geometry")
         coordinates = geometry.get("coordinates") if isinstance(geometry, dict) else None
         duration = raw_route.get("duration")
@@ -459,12 +502,15 @@ def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
             "known_hazards": candidate["hazard_pins"],
         })
 
-    # Only list roads that win a category (recommended, fastest, safest). Every road is still scored, so a
-    # detour appears as soon as it becomes, say, the safest one after a hazard is confirmed.
-    # The route a driver is already on always stays listed, even if it no longer wins a category.
-    route_data = [route for route in route_data if route["categories"] or route["route_id"] == keep_route_id]
-    # Recommended first, then the others from fastest to slowest (ids stay tied to the provider route).
-    route_data.sort(key=lambda route: (not route["recommended"], route["travel_time_minutes"]))
+    # Offer three options on three different roads (see _assign_options); every road is still scored, so
+    # the choice changes when a confirmed hazard makes a road riskier. The road a driver is already on
+    # always stays listed.
+    options = _assign_options(route_data)
+    for route in route_data:
+        route["option"] = options.get(route["route_id"])
+    route_data = [route for route in route_data if route["option"] or route["route_id"] == keep_route_id]
+    order = {"optimal": 0, "fastest": 1, "safer": 2}
+    route_data.sort(key=lambda route: order.get((route["option"] or {}).get("key", ""), 3))
     recommended_route = next(route for route in route_data if route["recommended"])
     return {
         "routes": route_data,
