@@ -9,7 +9,7 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 const pipeline = [
   { icon: Camera, title: 'Capture', text: 'Phone or dashcam frame, uploaded photo or recorded video' },
   { icon: Layers, title: 'Preprocess', text: 'Fix orientation · letterbox to 640×640 · optional CLAHE' },
-  { icon: Cpu, title: 'Detect', text: 'YOLO11, pretrained on COCO and fine-tuned by us on road images: potholes and cracks (severe road damage)' },
+  { icon: Cpu, title: 'Detect', text: 'Fine-tuned YOLO11 detects potholes and cracks; OpenCV also checks for reflective water-filled potholes' },
   { icon: ScanSearch, title: 'Filter', text: 'Confidence threshold chosen on validation · hazard must appear in 2 of 3 frames' },
   { icon: ShieldCheck, title: 'Confirm', text: 'Driver confirms by tap or voice; evidence frame and GPS are saved' },
   { icon: MapIcon, title: 'Re-route', text: 'Hazards within 75 m raise the route’s road risk, weighted by crop sensitivity' },
@@ -98,6 +98,11 @@ const beneficiaries = [
             <strong>Why CLAHE?</strong> Contrast Limited Adaptive Histogram Equalisation brightens dark regions tile by tile while
             limiting noise, on lightness only. We measured it rather than assumed it: on our road images it lowered accuracy, so it is
             off by default.
+          </p>
+          <p>
+            <strong>Water-filled potholes.</strong> Water can hide the asphalt texture used by the trained detector. A supplemental
+            OpenCV step finds smooth, bright reflections enclosed by a darker, horizontally elongated road rim. These findings use the
+            same multi-frame confirmation rule as YOLO detections.
           </p>
         </CardContent>
       </Card>

@@ -22,7 +22,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 REPORT_JSON_FILES = (
     "metrics", "optimization", "ablation", "latency", "robustness", "dataset_stats",
-    "smoothing", "model_b", "system",
+    "smoothing", "model_b", "system", "high_confidence_profile",
 )
 REPORT_IMAGES = (
     "confusion_matrix.png", "confusion_matrix_normalized.png", "pr_curve.png", "f1_confidence_curve.png",

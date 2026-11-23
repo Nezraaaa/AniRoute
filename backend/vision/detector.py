@@ -7,6 +7,7 @@ That keeps the API importable (and testable) even when the CV runtime is missing
 from __future__ import annotations
 
 import logging
+import platform
 import threading
 import time
 from dataclasses import dataclass
@@ -25,10 +26,23 @@ class RawBox:
     xyxy: tuple[float, float, float, float]   # pixels in the model-input image
 
 
+def automatic_format_order(system_name: str | None = None, machine: str | None = None) -> tuple[str, ...]:
+    """Return a safe preference order for the current platform.
+
+    The bundled OpenVINO export aborts inside its native ARM JIT on Apple Silicon,
+    before Python can catch the failure. ONNX Runtime is fast and stable there.
+    """
+    current_system = (system_name or platform.system()).lower()
+    current_machine = (machine or platform.machine()).lower()
+    if current_system == "darwin" and current_machine in {"arm64", "aarch64"}:
+        return ("onnx", "pt")
+    return ("openvino", "onnx", "pt")
+
+
 def resolve_weights(path: Path, model_format: str) -> Path:
     """Pick the fastest exported format that exists next to the .pt weights.
 
-    auto: OpenVINO dir → ONNX file → .pt. An explicit format falls back to .pt when missing.
+    Auto selection is platform-aware. An explicit format falls back to .pt when missing.
     """
     stem = path.with_suffix("")
     candidates = {
@@ -36,7 +50,7 @@ def resolve_weights(path: Path, model_format: str) -> Path:
         "onnx": stem.with_suffix(".onnx"),
         "pt": path,
     }
-    order = ["openvino", "onnx", "pt"] if model_format == "auto" else [model_format, "pt"]
+    order = automatic_format_order() if model_format == "auto" else (model_format, "pt")
     for key in order:
         candidate = candidates.get(key)
         if candidate is not None and candidate.exists():

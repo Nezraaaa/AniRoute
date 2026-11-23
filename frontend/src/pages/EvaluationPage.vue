@@ -33,6 +33,7 @@ onMounted(load)
 const r = computed(() => metrics.value?.reports ?? {})
 const images = computed(() => metrics.value?.images ?? {})
 const main = computed(() => r.value.metrics ?? null)
+const highConfidence = computed(() => r.value.high_confidence_profile ?? null)
 const latency = computed(() => r.value.latency ?? null)
 const optimization = computed(() => r.value.optimization ?? null)
 const ablation = computed(() => r.value.ablation ?? null)
@@ -48,17 +49,25 @@ const date = (value?: string) => value ? new Date(value).toLocaleString() : ''
 
 const headline = computed(() => {
   const m = main.value
+  const active = highConfidence.value?.test ?? m?.overall
   const systemFps = latency.value?.system?.fps
   return [
     { label: 'mAP@0.5', value: m ? num(m.overall.map50) : 'pending', hint: 'Area under the precision-recall curve, averaged over classes (IoU ≥ 0.5)' },
     { label: 'mAP@0.5:0.95', value: m ? num(m.overall.map50_95) : 'pending', hint: 'Same, averaged over stricter box-overlap thresholds' },
-    { label: 'Precision', value: m ? pct(m.overall.precision) : 'pending', hint: 'Of the alerts raised, how many were real hazards' },
-    { label: 'Recall', value: m ? pct(m.overall.recall) : 'pending', hint: 'Of the real hazards, how many were found' },
-    { label: 'F1', value: m ? num(m.overall.f1) : 'pending', hint: 'Balance of precision and recall at the operating threshold' },
+    { label: 'Precision', value: active ? pct(active.precision) : 'pending', hint: 'High-confidence profile: proportion of detections that matched labelled hazards' },
+    { label: 'Recall', value: active ? pct(active.recall) : 'pending', hint: 'High-confidence profile: proportion of labelled hazards found' },
+    { label: 'F1', value: active ? num(active.f1) : 'pending', hint: 'Precision-recall balance at the deployed threshold' },
     { label: 'Laptop CPU speed', value: systemFps ? `${systemFps} FPS` : 'pending', hint: latency.value?.system ? `End-to-end, models ${latency.value.system.models}` : 'Run ml/evaluate.py latency' },
   ]
 })
-const perClass = computed(() => main.value ? Object.entries(main.value.per_class as Record<string, any>) : [])
+const perClass = computed(() => {
+  if (!main.value) return []
+  const activeRows = highConfidence.value?.test?.per_class ?? {}
+  return Object.entries(main.value.per_class as Record<string, any>).map(([name, row]) => [
+    name,
+    { ...row, ...(activeRows[name] ?? {}) },
+  ] as [string, any])
+})
 const trainingRows = computed(() => (optimization.value?.rows ?? []) as any[])
 const latencyRows = computed(() => (latency.value?.rows ?? []) as any[])
 const galleryKinds: Array<[string, string]> = [['false_positives', 'False alarms'], ['false_negatives', 'Missed hazards'], ['misclassified', 'Wrong hazard type']]
@@ -88,6 +97,18 @@ python ml/evaluate.py latency</pre>
       </div>
     </Alert>
 
+    <Alert v-if="main && highConfidence" variant="default" class="eval-pending">
+      <Gauge :size="19" aria-hidden="true" />
+      <div>
+        <strong>High-confidence runtime profile</strong>
+        <p>
+          AniRoute deploys confidence {{ highConfidence.confidence.toFixed(2) }}: test precision
+          <strong>{{ pct(highConfidence.test.precision) }}</strong>, recall {{ pct(highConfidence.test.recall) }},
+          and F1 {{ num(highConfidence.test.f1) }}. The threshold was selected on validation to reduce false alerts.
+        </p>
+      </div>
+    </Alert>
+
     <section class="metric-cards" aria-label="Headline metrics">
       <div v-for="card in headline" :key="card.label" :class="['metric-card', card.value === 'pending' ? 'metric-card-pending' : '']">
         <span>{{ card.label }}</span>
@@ -96,13 +117,14 @@ python ml/evaluate.py latency</pre>
       </div>
     </section>
     <p v-if="main" class="eval-source">
-      Test split: {{ main.dataset.images }} images, {{ main.dataset.instances }} labelled hazards · operating threshold {{ main.operating_point.confidence }} ({{ main.operating_point.selection }})
+      Test split: {{ main.dataset.images }} images, {{ main.dataset.instances }} labelled hazards · deployed threshold {{ highConfidence?.confidence ?? main.operating_point.confidence }}
+      ({{ highConfidence?.selection ?? main.operating_point.selection }})
       · model {{ main.model.weights }} #{{ main.model.fingerprint }} · evaluated {{ date(main.evaluated_at) }}
     </p>
 
     <div v-if="main" class="eval-grid">
       <Card>
-        <CardHeader><CardTitle>Per-class results</CardTitle><CardDescription>Counts use IoU ≥ 0.5 at the operating threshold.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Per-class results</CardTitle><CardDescription>Counts use IoU ≥ 0.5 at confidence {{ highConfidence?.confidence ?? main.operating_point.confidence }}.</CardDescription></CardHeader>
         <CardContent class="table-scroll">
           <table class="lab-table">
             <thead><tr><th>Class</th><th>Boxes</th><th>AP50</th><th>AP50-95</th><th>Precision</th><th>Recall</th><th>F1</th><th>TP</th><th>FP</th><th>FN</th></tr></thead>
@@ -124,7 +146,7 @@ python ml/evaluate.py latency</pre>
 
     <div v-if="images['pr_curve.png'] || images['f1_confidence_curve.png'] || images['training_curves.png']" class="figure-grid">
       <figure v-if="images['pr_curve.png']"><img :src="images['pr_curve.png']" alt="Precision-recall curves per class" /><figcaption>Precision-recall curve per class (test split).</figcaption></figure>
-      <figure v-if="images['f1_confidence_curve.png']"><img :src="images['f1_confidence_curve.png']" alt="F1 score against confidence threshold" /><figcaption>The operating threshold is the F1 peak, chosen on the validation split.</figcaption></figure>
+      <figure v-if="images['f1_confidence_curve.png']"><img :src="images['f1_confidence_curve.png']" alt="F1 score against confidence threshold" /><figcaption>The curve shows the balanced max-F1 reference at 0.145; the deployed high-confidence profile uses 0.40.</figcaption></figure>
       <figure v-if="images['training_curves.png']"><img :src="images['training_curves.png']" alt="Training and validation losses and mAP per epoch" /><figcaption>Training curves (loss and validation mAP per epoch).</figcaption></figure>
     </div>
 
@@ -252,6 +274,7 @@ python ml/evaluate.py latency</pre>
           <li><strong>Obstructions are out of scope.</strong> People, animals, fallen trees or landslides on the road are not detected; drivers can still report a hazard manually.</li>
           <li><strong>Small or distant potholes and faint cracks are missed most often</strong> — see the size breakdown above when available.</li>
           <li><strong>Night, rain and motion blur reduce recall.</strong> CLAHE contrast enhancement did not help on our data (see the ablation), so it is off by default.</li>
+          <li><strong>The water-filled-pothole check is rule-based.</strong> Reflections can resemble pooled water, so it uses driver confirmation and temporal smoothing. The reported detection metrics measure the fine-tuned YOLO11 model.</li>
           <li><strong>Modest accuracy.</strong> A nano model trained for 40 epochs on a laptop CPU; many errors are boxes drawn differently from the annotators' boxes. A larger model and more data need a GPU.</li>
           <li><strong>Route-risk weights are heuristics</strong>, not validated postharvest-loss coefficients; field trials are needed before claiming loss reduction.</li>
           <li><strong>Distance to the hazard is not estimated</strong>; hazards are pinned at the vehicle's GPS position when confirmed.</li>

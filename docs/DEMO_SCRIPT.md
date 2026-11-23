@@ -3,8 +3,8 @@
 ## Before the panel (15 minutes earlier)
 
 - [ ] Laptop on power, notifications off, browser zoom 100%, close other heavy apps.
-- [ ] `scripts/start.ps1` running; open <http://127.0.0.1:5173>. Wait until the header badge
-      says **Detector online** (model loaded). `backend/samples/demo_drive.webm` exists (see "Demo video" below).
+- [ ] Start the application and open <http://127.0.0.1:5173>. Confirm that Active Trip shows
+      **Detects now: Pothole, Severe road damage** before analysing `backend/samples/demo_drive.webm`.
 - [ ] **Internet is on** (route planning uses OSRM and OpenStreetMap search; map tiles load online).
 - [ ] **Allow location** in the browser and check that the trip page says *Vehicle GPS is pinned*.
 - [ ] **Plan the demo trip from the venue**: set the pickup point to the school/building you present in,

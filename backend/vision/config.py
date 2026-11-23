@@ -5,7 +5,6 @@ deployments do not need code changes.
 """
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,16 +57,6 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def evaluated_operating_threshold(reports_dir: Path = REPORTS_DIR) -> float | None:
-    """Return the max-F1 confidence threshold chosen by ml/evaluate.py, if it exists."""
-    try:
-        metrics = json.loads((reports_dir / "metrics.json").read_text(encoding="utf-8"))
-        value = float(metrics["operating_point"]["confidence"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-    return value if 0 < value < 1 else None
-
-
 @dataclass(frozen=True)
 class RoiSettings:
     """Trapezoid 'driving corridor' used to decide whether a COCO object blocks the road.
@@ -91,9 +80,12 @@ class VisionSettings:
     model_format: str = field(default_factory=lambda: os.getenv("ANIROUTE_MODEL_FORMAT", "auto").lower())
     # Project scope is road-surface damage (potholes and cracks); the COCO obstruction model is optional.
     enable_model_b: bool = field(default_factory=lambda: _env_bool("ANIROUTE_ENABLE_OBSTRUCTION_MODEL", False))
+    enable_water_pothole_detector: bool = field(default_factory=lambda: _env_bool(
+        "ANIROUTE_ENABLE_WATER_POTHOLE_DETECTOR", True))
     imgsz: int = field(default_factory=lambda: _env_int("ANIROUTE_IMGSZ", 640))
-    conf_a: float = field(default_factory=lambda: _env_float(
-        "ANIROUTE_CONF_THRESHOLD", evaluated_operating_threshold() or 0.35))
+    # High-confidence profile: 78.3% precision on the held-out test split at 0.40.
+    # Override through the environment when comparing other operating points.
+    conf_a: float = field(default_factory=lambda: _env_float("ANIROUTE_CONF_THRESHOLD", 0.40))
     conf_b: float = field(default_factory=lambda: _env_float("ANIROUTE_OBSTRUCTION_CONF_THRESHOLD", 0.45))
     iou: float = field(default_factory=lambda: _env_float("ANIROUTE_NMS_IOU", 0.5))
     device: str = field(default_factory=lambda: os.getenv("ANIROUTE_DEVICE", "cpu"))

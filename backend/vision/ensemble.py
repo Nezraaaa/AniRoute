@@ -18,6 +18,7 @@ import numpy as np
 from .config import COCO_OBSTRUCTION_CLASSES, HAZARD_LABELS, HAZARD_TYPES, RoiSettings, VisionSettings
 from .detector import RawBox, YoloModel
 from .preprocess import ClaheMode, PipelineResult, run_pipeline, unletterbox_boxes
+from .water_potholes import detect_water_filled_potholes
 
 # Model A label aliases, so weights trained with raw dataset names still map correctly.
 MODEL_A_ALIASES = {
@@ -221,6 +222,27 @@ class HazardDetector:
             detections.extend(found)
             timings["model_b"] = elapsed
             models_used.append("B")
+
+        if s.enable_water_pothole_detector and not any(item.hazard_type == "pothole" for item in detections):
+            water_threshold = conf if conf is not None else s.conf_a
+            water_candidates = [
+                candidate for candidate in detect_water_filled_potholes(pipeline.enhanced)
+                if candidate.confidence >= water_threshold
+            ]
+            for candidate in water_candidates:
+                x1, y1, x2, y2 = candidate.box
+                detections.append(Detection(
+                    hazard_type="pothole",
+                    label=HAZARD_LABELS["pothole"],
+                    source_label="water-filled pothole",
+                    confidence=candidate.confidence,
+                    box=candidate.box,
+                    box_norm=(x1 / pipeline.letterbox.original_width, y1 / pipeline.letterbox.original_height,
+                              x2 / pipeline.letterbox.original_width, y2 / pipeline.letterbox.original_height),
+                    model="CV",
+                ))
+            if water_candidates:
+                models_used.append("CV")
 
         if not models_used:
             raise RuntimeError("No detection model is available. Add trained weights to backend/models/.")

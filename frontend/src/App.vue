@@ -41,20 +41,17 @@ onBeforeUnmount(() => window.clearInterval(healthTimer))
         <RouterLink to="/evaluation" class="app-nav-link" active-class="app-nav-link-active">Evaluation</RouterLink>
         <RouterLink to="/about" class="app-nav-link" active-class="app-nav-link-active">About</RouterLink>
       </nav>
-      <div class="topbar-actions" aria-live="polite">
+      <div v-if="serviceStatus !== 'ready'" class="topbar-actions" aria-live="polite">
         <Badge
-          :variant="serviceStatus === 'ready' ? 'default' : serviceStatus === 'checking' || serviceStatus === 'starting' ? 'secondary' : 'warning'"
+          :variant="serviceStatus === 'checking' || serviceStatus === 'starting' ? 'secondary' : 'warning'"
           class="topbar-badge"
         >
-          {{ serviceStatus === 'ready' ? 'Detector online' : serviceStatus === 'no-detector' ? 'No detection model loaded' : serviceStatus === 'offline' ? 'Backend offline' : serviceStatus === 'starting' ? 'Detector starting…' : 'Connecting…' }}
+          {{ serviceStatus === 'no-detector' ? 'No detection model loaded' : serviceStatus === 'offline' ? 'Backend offline' : serviceStatus === 'starting' ? 'Detector starting…' : 'Connecting…' }}
         </Badge>
       </div>
     </header>
     <main class="app-main">
       <RouterView />
     </main>
-    <footer class="app-footer">
-      <span>AniRoute crop-aware transport optimizer · road-hazard detection with YOLO</span>
-    </footer>
   </div>
 </template>

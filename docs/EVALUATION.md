@@ -14,11 +14,11 @@ python ml/scripts/preprocess_demo.py
 
 ## Protocol (how we avoid fooling ourselves)
 
-1. Train on **train**; choose the best experiment and the confidence threshold on **val**.
+1. Train on **train**; choose the best experiment and all confidence thresholds on **val**.
 2. Report **test** once with those choices fixed.
 3. Near-duplicate images are removed from val/test before training (`prepare_dataset.py`).
-4. The selected model (E1), threshold (0.145) and preprocessing (CLAHE off) were all fixed on validation
-   before the single test run.
+4. The selected model (E1), balanced threshold (0.145), deployed high-confidence threshold (0.40), and
+   preprocessing (CLAHE off) were fixed on validation before their test results were reported.
 
 ## Metrics in one sentence each
 
@@ -40,7 +40,7 @@ Our implementation (`ml/evaluation/metrics.py`) is unit-tested against hand-comp
 
 ### Model A on the test split (444 held-out images, 264 labelled objects)
 
-Selected run **E1**, confidence **0.145** (max F1 on validation), CLAHE off, IoU 0.5.
+Balanced reference: selected run **E1**, confidence **0.145** (max F1 on validation), CLAHE off, IoU 0.5.
 
 | Class | Objects | AP@0.5 | AP@0.5:0.95 | Precision | Recall | F1 | TP / FP / FN |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -48,8 +48,24 @@ Selected run **E1**, confidence **0.145** (max F1 on validation), CLAHE off, IoU
 | severe_road_damage | 189 | 0.358 | 0.162 | 0.44 | 0.35 | 0.39 | 66 / 85 / 123 |
 | **overall** | **264** | **0.278** | **0.122** | **0.41** | **0.31** | **0.35** | 83 / 121 / 181 |
 
+### Deployed high-confidence profile
+
+The running application uses confidence **0.40**, selected on validation to target 70–80% precision.
+
+| Class | Objects | Precision | Recall | F1 | TP / FP / FN |
+| --- | ---: | ---: | ---: | ---: | --- |
+| pothole | 75 | 0.44 | 0.05 | 0.10 | 4 / 5 / 71 |
+| severe_road_damage | 189 | 0.86 | 0.17 | 0.28 | 32 / 5 / 157 |
+| **overall** | **264** | **0.783** | **0.136** | **0.232** | 36 / 10 / 228 |
+
+This profile makes displayed alerts more trustworthy but misses substantially more hazards. It must be
+reported as **78.3% precision**, not 78.3% accuracy. The threshold-independent mAP values remain unchanged.
+The complete profile is stored in `ml/reports/high_confidence_profile.json`.
+
 Confusion matrix (rows = true, columns = predicted): the two classes are almost never confused with each
 other (3 of 264); nearly all errors are against *background*: missed objects (181) or false alarms (121).
+
+The confusion matrix below was generated for the balanced 0.145 reference.
 
 ![Confusion matrix](../ml/reports/confusion_matrix.png)
 ![Precision-recall](../ml/reports/pr_curve.png)

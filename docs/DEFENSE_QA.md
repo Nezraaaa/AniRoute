@@ -78,12 +78,13 @@ averages — it is stricter and always lower.
 
 **16. Precision or recall — which matters more here?**
 For a driver, too many false alarms make them ignore the app (precision); missed potholes cause damage
-(recall). We choose the threshold at maximum F1 on validation, and the driver confirmation step catches
-remaining false alarms, so we can afford a slightly lower threshold for better recall.
+(recall). The deployed profile prioritizes precision, then uses temporal smoothing and driver confirmation
+to reduce unstable alerts. Its limitation is low recall, which we report directly.
 
 **17. How did you choose the confidence threshold?**
-The F1-vs-confidence curve on the validation split; we took the peak (0.145), then reported test
-results at that fixed threshold. Moving from the default 0.25 raised validation F1 from 0.378 to 0.427.
+We retained 0.145 as the balanced max-F1 reference, then selected 0.40 on the validation split to target
+70–80% precision. At the fixed 0.40 threshold, the held-out test result was 78.3% precision and 13.6%
+recall. This is a deliberate false-alarm versus missed-hazard tradeoff, not 78.3% accuracy.
 
 **18. How do you know the test score is not inflated?**
 Test images are never trained on or used for choices; near-duplicates of training images are removed from

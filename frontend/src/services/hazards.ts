@@ -29,7 +29,7 @@ interface ScanFrameResponse {
     hazard_type: HazardType
     label?: string
     source_label?: string
-    model?: 'A' | 'B'
+    model?: 'A' | 'B' | 'CV'
     detected_at: string
     confidence?: number
     latitude?: number | null

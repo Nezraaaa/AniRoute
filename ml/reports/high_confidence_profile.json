@@ -1,0 +1,54 @@
+{
+  "profile": "high_confidence",
+  "confidence": 0.4,
+  "iou": 0.5,
+  "selection": "Threshold selected on the validation split to target 70-80% precision",
+  "validation": {
+    "images": 448,
+    "instances": 257,
+    "precision": 0.8,
+    "recall": 0.1401,
+    "f1": 0.2384,
+    "tp": 36,
+    "fp": 9,
+    "fn": 221
+  },
+  "test": {
+    "images": 444,
+    "instances": 264,
+    "precision": 0.7826,
+    "recall": 0.1364,
+    "f1": 0.2323,
+    "tp": 36,
+    "fp": 10,
+    "fn": 228,
+    "per_class": {
+      "pothole": {
+        "instances": 75,
+        "precision": 0.4444,
+        "recall": 0.0533,
+        "f1": 0.0952,
+        "tp": 4,
+        "fp": 5,
+        "fn": 71
+      },
+      "severe_road_damage": {
+        "instances": 189,
+        "precision": 0.8649,
+        "recall": 0.1693,
+        "f1": 0.2832,
+        "tp": 32,
+        "fp": 5,
+        "fn": 157
+      }
+    }
+  },
+  "balanced_reference": {
+    "confidence": 0.145,
+    "precision": 0.4069,
+    "recall": 0.3144,
+    "f1": 0.3547,
+    "selection": "Maximum mean F1 on the validation split"
+  },
+  "note": "The deployed profile favors fewer false alerts. mAP is threshold-independent and remains reported from metrics.json."
+}

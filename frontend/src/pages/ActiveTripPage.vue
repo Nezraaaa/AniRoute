@@ -352,7 +352,7 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
           <CardContent class="camera-status-content">
             <div class="camera-sensor-meta">
               <span class="sensor-live-label"><span class="sensor-live-dot"></span> {{ scanner.fps.value ? `Analysing ${scanner.fps.value} frames/s` : scanner.running.value ? 'Analysing frames…' : 'Not analysing' }}</span>
-              <span>{{ scanner.latencyMs.value ? `${scanner.latencyMs.value} ms per frame` : 'YOLO · 2 models' }}</span>
+              <span>{{ scanner.latencyMs.value ? `${scanner.latencyMs.value} ms per frame` : 'YOLO11 road-damage model' }}</span>
             </div>
             <CameraPreview
               ref="cameraPreview"

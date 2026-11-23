@@ -12,13 +12,14 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend.vision import ensemble, router as vision_router
 from backend.vision.config import RoiSettings, VisionSettings
-from backend.vision.detector import RawBox, resolve_weights
+from backend.vision.detector import RawBox, automatic_format_order, resolve_weights
 from backend.vision.ensemble import HazardDetector, in_driving_corridor, map_model_a_label
 from backend.vision.preprocess import (
     decode_data_url, decode_image, enhance_contrast_clahe, letterbox, luminance_stats, run_pipeline,
     unletterbox_boxes,
 )
 from backend.vision.smoothing import TemporalHazardFilter
+from backend.vision.water_potholes import detect_water_filled_potholes
 
 
 def png_bytes(image: np.ndarray) -> bytes:
@@ -64,6 +65,13 @@ def well_exposed_image() -> np.ndarray:
     return np.repeat(np.repeat(gradient, 1280, axis=1), 3, axis=2).astype(np.uint8)
 
 
+def water_filled_pothole_image() -> np.ndarray:
+    image = np.full((480, 640, 3), 82, dtype=np.uint8)
+    cv2.ellipse(image, (350, 330), (155, 72), 0, 0, 360, (32, 32, 32), thickness=-1)
+    cv2.ellipse(image, (350, 330), (120, 43), 0, 0, 360, (205, 198, 190), thickness=-1)
+    return image
+
+
 def test_clahe_brightens_dark_frames_but_auto_mode_skips_bright_ones():
     dark = road_image(brightness=40)
     enhanced = enhance_contrast_clahe(dark)
@@ -83,6 +91,18 @@ def test_pipeline_records_stages_for_before_after_view():
     assert [stage.name for stage in result.stages] == ["original", "clahe", "letterbox"]
     assert result.stages[-1].image.shape == (640, 640, 3)
     assert result.model_input.shape == (640, 640, 3)
+
+
+def test_water_filled_pothole_detector_finds_reflective_pool_and_dark_rim():
+    candidates = detect_water_filled_potholes(water_filled_pothole_image())
+    assert len(candidates) == 1
+    x1, y1, x2, y2 = candidates[0].box
+    assert x1 < 230 and y1 < 290 and x2 > 470 and y2 > 370
+    assert 0.5 <= candidates[0].confidence <= 0.68
+
+
+def test_water_filled_pothole_detector_ignores_well_exposed_road_gradient():
+    assert detect_water_filled_potholes(well_exposed_image()) == []
 
 
 def test_decode_image_and_data_url_validation():
@@ -165,6 +185,17 @@ def test_ensemble_merges_both_models_into_hazard_types():
     pothole = next(item for item in result.detections if item.hazard_type == "pothole")
     assert pothole.box == pytest.approx((600, 520, 760, 600))   # mapped back to 1280x720 pixels
     assert detector.model_a.calls == 1 and detector.model_b.calls == 1  # type: ignore[attr-defined]
+
+
+def test_ensemble_uses_water_pothole_detector_when_yolo_has_no_pothole():
+    detector = HazardDetector(VisionSettings(warmup=False, conf_a=0.35, enable_model_b=False))
+    detector.model_a = FakeModel("A", [], {0: "pothole", 1: "severe_road_damage"})  # type: ignore[assignment]
+    result = detector.detect(water_filled_pothole_image(), clahe="off")
+    assert result.models_used == ["A", "CV"]
+    assert len(result.detections) == 1
+    assert result.detections[0].hazard_type == "pothole"
+    assert result.detections[0].source_label == "water-filled pothole"
+    assert result.detections[0].model == "CV"
 
 
 # --------------------------------------------------------------------------- smoothing
@@ -256,15 +287,41 @@ def test_model_info_and_metrics_pending(client, monkeypatch, tmp_path):
     assert client.get("/api/model/metrics").json()["status"] == "evaluated"
 
 
-def test_resolve_weights_prefers_exported_formats(tmp_path):
+def test_resolve_weights_prefers_exported_formats(tmp_path, monkeypatch):
     weights = tmp_path / "model.pt"
     weights.write_bytes(b"x")
+    monkeypatch.setattr("backend.vision.detector.platform.system", lambda: "Linux")
+    monkeypatch.setattr("backend.vision.detector.platform.machine", lambda: "x86_64")
     assert resolve_weights(weights, "auto") == weights
     (tmp_path / "model.onnx").write_bytes(b"x")
     assert resolve_weights(weights, "auto").suffix == ".onnx"
     (tmp_path / "model_openvino_model").mkdir()
     assert resolve_weights(weights, "auto").name == "model_openvino_model"
     assert resolve_weights(weights, "pt") == weights
+
+
+def test_auto_format_order_avoids_openvino_on_apple_silicon():
+    assert automatic_format_order("Darwin", "arm64") == ("onnx", "pt")
+    assert automatic_format_order("Darwin", "aarch64") == ("onnx", "pt")
+    assert automatic_format_order("Linux", "x86_64") == ("openvino", "onnx", "pt")
+
+
+def test_default_settings_use_high_confidence_profile(monkeypatch):
+    monkeypatch.delenv("ANIROUTE_CONF_THRESHOLD", raising=False)
+    assert VisionSettings().conf_a == pytest.approx(0.40)
+
+
+def test_apple_silicon_auto_uses_onnx_then_pytorch(tmp_path, monkeypatch):
+    weights = tmp_path / "model.pt"
+    weights.write_bytes(b"pt")
+    (tmp_path / "model_openvino_model").mkdir()
+    monkeypatch.setattr("backend.vision.detector.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("backend.vision.detector.platform.machine", lambda: "arm64")
+    assert resolve_weights(weights, "auto") == weights
+    onnx = tmp_path / "model.onnx"
+    onnx.write_bytes(b"onnx")
+    assert resolve_weights(weights, "auto") == onnx
+    assert resolve_weights(weights, "openvino").name == "model_openvino_model"
 
 
 def test_png_helper_roundtrip():

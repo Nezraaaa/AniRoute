@@ -67,7 +67,7 @@ deterministic, early stopping patience 20, Ultralytics default optimiser and lea
 
 | Setting | Value | How chosen |
 | --- | --- | --- |
-| Model A confidence | from `ml/reports/metrics.json → operating_point` (default 0.35 until evaluated) | maximum F1 on the **validation** split |
+| Model A confidence | 0.40 | selected on validation for a high-confidence profile; 78.3% precision and 13.6% recall on test |
 | Model B confidence | 0.45 | conservative, to avoid alerts for distant objects |
 | NMS IoU | 0.5 | Ultralytics default range |
 | Driving corridor | horizon at 40% of height, half-width 10% → 25% at the bottom | geometry of a dashboard camera view |

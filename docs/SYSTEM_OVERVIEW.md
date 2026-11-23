@@ -55,8 +55,8 @@ flowchart TD
 | Layer | Files | Responsibility |
 | --- | --- | --- |
 | Preprocessing | `backend/vision/preprocess.py` | Decode, EXIF orientation, CLAHE, letterbox; shared with evaluation |
-| Detectors | `backend/vision/detector.py` | Lazy YOLO loading; picks OpenVINO → ONNX → PyTorch automatically |
-| Integration | `backend/vision/ensemble.py` | Runs Model A + B, maps classes, applies the corridor rule, merges |
+| Detectors | `backend/vision/detector.py` | Lazy YOLO loading; uses ONNX on Apple Silicon, otherwise OpenVINO → ONNX → PyTorch |
+| Integration | `backend/vision/ensemble.py` | Runs Model A, the optional Model B, and the water-filled-pothole image-processing check; maps and merges results |
 | Smoothing | `backend/vision/smoothing.py` | 2-of-3 voting, cooldown, 50 m dedupe |
 | API | `backend/vision/router.py`, `backend/main.py` | `/api/vision/*`, `/api/model/*`, `/api/hazards/*`, `/api/routes/*` |
 | Route risk | `backend/hazard_risk.py` | Point-to-route distance, severity weights, crop multiplier |

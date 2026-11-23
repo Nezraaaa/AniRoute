@@ -9,6 +9,9 @@ Hazards seen in 2 of 3 frames alert the driver; confirmed hazards are geotagged 
 of every route that passes them, weighted by how fragile the crop is, so the app can recommend a safer
 route.
 
+When standing water hides the pothole texture, a supplemental OpenCV check looks for a smooth reflection
+inside a darker, horizontally elongated road depression before applying the same multi-frame confirmation.
+
 ![Detections on held-out test images](ml/reports/sample_detections/test_pothole_06.jpg)
 
 ## Quick start
@@ -62,7 +65,8 @@ cd frontend && npm run screenshots   # fresh screenshots (servers running)
 1. `prepare_dataset.py` maps the classes and removes train/test near-duplicates;
 2. `train.py` trains E0 (baseline, 20 epochs) and E1 (40 epochs, early stopping) from COCO weights;
 3. `evaluate.py` picks the better run on the validation split and evaluates it once on the test split;
-4. `export.py` writes ONNX/OpenVINO copies, auto-selected by the API for faster CPU inference.
+4. `export.py` writes ONNX/OpenVINO copies. The API selects ONNX on Apple Silicon and otherwise prefers
+   OpenVINO, with ONNX and PyTorch fallbacks.
 
 With a GPU, `ml/notebooks/train_colab.ipynb` and the presets E2–E4/E7 in `train.py` extend the series.
 
@@ -110,6 +114,7 @@ presentation/          build_deck.py → AniRoute_CSST106.pptx, screenshots/
 
 ## Documentation
 
+- [Manual test walkthrough](docs/MANUAL_TEST_WALKTHROUGH.md) — verify startup, routing, recorded-drive detection, evaluation, and course coverage
 - [Problem and objectives](docs/PROBLEM_AND_OBJECTIVES.md) — real-world problem, sources, beneficiaries
 - [System overview](docs/SYSTEM_OVERVIEW.md) — architecture and detection flowchart
 - [Dataset](docs/DATASET.md) — source, licence, counts, how to reproduce

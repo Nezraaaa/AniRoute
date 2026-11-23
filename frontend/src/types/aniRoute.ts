@@ -91,7 +91,7 @@ export interface DetectedHazard {
   label?: string
   /** Raw class from the model that produced the detection (COCO label for model B). */
   sourceLabel?: string
-  model?: 'A' | 'B'
+  model?: 'A' | 'B' | 'CV'
   framesSeen?: number
 }
 
@@ -128,7 +128,7 @@ export interface ApiErrorShape {
 // Computer vision (live scanning, evaluation reports)
 // ---------------------------------------------------------------------------
 export type ClaheMode = 'auto' | 'on' | 'off'
-export type DetectionModel = 'A' | 'B'
+export type DetectionModel = 'A' | 'B' | 'CV'
 export type BoxTuple = [number, number, number, number]
 
 export interface VisionDetection {
