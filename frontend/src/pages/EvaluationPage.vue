@@ -37,7 +37,6 @@ const latency = computed(() => r.value.latency ?? null)
 const optimization = computed(() => r.value.optimization ?? null)
 const ablation = computed(() => r.value.ablation ?? null)
 const robustness = computed(() => r.value.robustness ?? null)
-const modelB = computed(() => r.value.model_b ?? null)
 const smoothing = computed(() => r.value.smoothing ?? null)
 const dataset = computed(() => r.value.dataset_stats ?? null)
 const gallery = computed(() => metrics.value?.errorGallery ?? {})
@@ -195,16 +194,9 @@ python ml/evaluate.py latency</pre>
         </CardContent>
       </Card>
       <Card class="eval-section">
-        <CardHeader><div class="eval-section-title"><Gauge :size="18" aria-hidden="true" /><CardTitle>Model B and alert smoothing</CardTitle></div>
-          <CardDescription>Pretrained obstruction model with vs without the driving-corridor rule, and alerts with vs without 2-of-3 frame voting.</CardDescription></CardHeader>
+        <CardHeader><div class="eval-section-title"><Gauge :size="18" aria-hidden="true" /><CardTitle>Alert smoothing</CardTitle></div>
+          <CardDescription>Alerts on the recorded drive with vs without 2-of-3 frame voting.</CardDescription></CardHeader>
         <CardContent>
-          <table v-if="modelB" class="lab-table">
-            <thead><tr><th>Model B</th><th>Precision</th><th>Recall</th><th>F1</th><th>FP</th></tr></thead>
-            <tbody>
-              <tr v-for="key in ['without_roi', 'with_roi']" :key="key"><td>{{ key === 'with_roi' ? 'With corridor rule' : 'Without rule' }}</td><td>{{ pct(modelB.results[key]?.precision) }}</td><td>{{ pct(modelB.results[key]?.recall) }}</td><td>{{ num(modelB.results[key]?.f1) }}</td><td>{{ modelB.results[key]?.fp }}</td></tr>
-            </tbody>
-          </table>
-          <p v-else class="lab-muted">Model B accuracy not measured: we did not label an obstruction test set. It is the unchanged COCO model; the driving-corridor rule is shown on the annotated sample images and during the live trip.</p>
           <p v-if="smoothing" class="eval-stat-line">
             Drive “{{ smoothing.video }}” ({{ smoothing.duration_s }} s): <strong>{{ smoothing.without_smoothing.alerts_per_minute }}</strong> alerts/min without smoothing →
             <strong>{{ smoothing.with_smoothing.alerts_per_minute }}</strong> with {{ smoothing.with_smoothing.min_hits }}-of-{{ smoothing.with_smoothing.window }} voting.
@@ -257,7 +249,7 @@ python ml/evaluate.py latency</pre>
         <ul class="limits-list">
           <li><strong>Training data is from Indian roads.</strong> The RDD2022 India subset is the closest public match, but there is no labelled Philippine test set yet; expect lower accuracy on local farm-to-market roads until local images are added<template v-if="main?.extra_splits?.test_local"> (local test mAP@0.5 {{ num(main.extra_splits.test_local.map50) }})</template>.</li>
           <li><strong>Standing water is not detected automatically.</strong> Public flooded-road data is too small and inconsistent; drivers report it manually.</li>
-          <li><strong>Model B has no carabao, goat, fallen-tree or landslide class.</strong> COCO covers cows, horses, sheep, dogs, people and vehicles only.</li>
+          <li><strong>Obstructions are out of scope.</strong> People, animals, fallen trees or landslides on the road are not detected; drivers can still report a hazard manually.</li>
           <li><strong>Small or distant potholes and faint cracks are missed most often</strong> — see the size breakdown above when available.</li>
           <li><strong>Night, rain and motion blur reduce recall.</strong> CLAHE contrast enhancement did not help on our data (see the ablation), so it is off by default.</li>
           <li><strong>Modest accuracy.</strong> A nano model trained for 40 epochs on a laptop CPU; many errors are boxes drawn differently from the annotators' boxes. A larger model and more data need a GPU.</li>

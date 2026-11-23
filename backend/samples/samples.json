@@ -1,9 +1,4 @@
 {
-  "street_bus_pedestrians.jpg": {
-    "caption": "Street scene: bus and pedestrians (obstruction demo)",
-    "source": "Ultralytics sample image bus.jpg (AGPL-3.0)",
-    "demo": false
-  },
   "test_severe_road_damage_01.jpg": {
     "caption": "Held-out test image (severe road damage)",
     "source": "AniRoute test split (never used in training)",

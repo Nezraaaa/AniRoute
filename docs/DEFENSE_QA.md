@@ -1,7 +1,7 @@
 # Defense — likely panel questions and honest answers
 
 Numbers come from `ml/reports/` (see `docs/EVALUATION.md`). Headline: test mAP@0.5 **0.278**, precision
-**0.41**, recall **0.31** on 444 held-out images; **17 FPS** end to end on the laptop CPU.
+**0.41**, recall **0.31** on 444 held-out images; **30 FPS** end to end on the laptop CPU.
 
 ## Problem and relevance
 
@@ -33,13 +33,13 @@ much slower.
 **6. What does "pretrained" mean, and what exactly did you train?**
 Model A starts from YOLO11 weights trained on COCO (118k photos). We fine-tuned it on labelled pothole and
 road-damage images (RDD2022, India subset) so its head predicts our two classes — that training is ours
-(runs E0 and E1, on a laptop CPU). Model B is
-the COCO model used without training, plus our driving-corridor rule.
+(runs E0 and E1, on a laptop CPU). Nothing else is used for detection.
 
-**7. Why two models instead of one?**
-COCO already recognises people, animals and vehicles very well — retraining that would need thousands of
-new labels for no gain. Road damage is not in COCO, so it needs fine-tuning. Running both on the same
-preprocessed frame costs about 58 ms per frame on the laptop CPU (17 FPS, OpenVINO).
+**7. Why only potholes and cracks? What about obstructions?**
+Road-surface damage is what bruises produce and is not in any pretrained model, so it is where training
+adds value. We built a second, COCO-pretrained model for people, animals and vehicles in the lane, but
+switched it off to keep the project focused and every reported number backed by our own test set
+(`ANIROUTE_ENABLE_OBSTRUCTION_MODEL=true` turns it back on). The detector runs in about 33 ms per frame end to end (30 FPS).
 
 **8. Explain the YOLO pipeline in 30 seconds.**
 Backbone extracts features; neck merges them at several scales; head predicts boxes, class scores and
@@ -61,17 +61,10 @@ No, and that is a result we report rather than hide. On validation, CLAHE auto s
 13 dark images, off was better (0.435 vs 0.284). The model was trained on un-enhanced images, so CLAHE moves
 the input away from what it learned and amplifies asphalt texture. It stays available as an option.
 
-**12. How does the driving-corridor rule work?**
-A trapezoid in front of the vehicle (from 40% down the frame to the bottom, widening from 20% to 50% of the
-width). A COCO object counts as an obstruction only if the bottom-centre of its box — where it touches
-the road — is inside, and the box is at least 12% of the frame height (close). Parked cars at the
-roadside are ignored. We did not label an obstruction test set, so this rule is a design choice we can
-demonstrate on the annotated sample images and in the live trip, not a measured accuracy number — a stated limitation.
-
 **13. Why 2 of 3 frames?**
 A single frame can show a shadow or wet patch as a pothole. Requiring the same hazard in 2 of the last 3
 analysed frames (~1.2 s) removes most one-frame false alarms for a small delay. On the 36-second demo
-drive it cut alerts from 39 (65 per minute) to 4 (6.7 per minute).
+drive it cut alerts from 18 (30 per minute) to 2 (3.3 per minute).
 
 ## Evaluation
 
@@ -106,7 +99,7 @@ area differently from how the annotator split it.
 Four controlled steps, one change at a time: (1) E0 baseline, 20 epochs from COCO weights; (2) E1 longer
 training, 40 epochs with early stopping; the better run on **validation** is deployed (E1,
 val mAP@0.5 0.289 → 0.334, +16%); (3) confidence threshold tuned at max F1 on validation; (4) CLAHE
-ablation (off / auto / on) and ONNX/OpenVINO export for speed (OpenVINO 33 ms vs PyTorch 43 ms per model, 22% faster).
+ablation (off / auto / on) and ONNX/OpenVINO export for speed (OpenVINO 38 ms vs PyTorch 51 ms, 26% faster).
 Bigger models and higher resolution (presets E2–E4 in `train.py`) are ready but need a GPU — future work.
 
 **21. Why didn't you use automatic hyperparameter tuning?**
@@ -114,7 +107,7 @@ Ultralytics' genetic tuner needs hundreds of training runs; one of our runs alre
 one-change-at-a-time experiments instead, which are also easier to explain.
 
 **22. How fast is it?**
-58 ms per frame end to end (17 FPS) on this laptop's CPU with OpenVINO. The app analyses about 1–2 frames per second during
+33 ms per frame end to end (30 FPS) on this laptop's CPU with OpenVINO. The app analyses about 1–2 frames per second during
 a trip, which is enough because hazards stay in view for several seconds.
 
 ## Errors, limitations, future work
@@ -154,7 +147,7 @@ real deployment, evidence should be encrypted, access-controlled and deleted aft
 
 **28. Can it run on a phone?**
 The browser already uses the phone camera and sends frames to the server. For on-device inference, the
-nano model exported to ONNX/TFLite would run on recent phones; we measured 33 ms per model on a laptop CPU.
+nano model exported to ONNX/TFLite would run on recent phones; we measured 38 ms per frame on a laptop CPU.
 
 **29. What would you do with more time?**
 Local Philippine dataset and labels; standing-water and landslide classes; distance-to-hazard estimation;

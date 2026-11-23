@@ -4,7 +4,7 @@
 
 - [ ] Laptop on power, notifications off, browser zoom 100%, close other heavy apps.
 - [ ] `scripts/start.ps1` running; open <http://127.0.0.1:5173>. Wait until the header badge
-      says **Detector online** (both models loaded). `backend/samples/demo_drive.webm` exists (see "Demo video" below).
+      says **Detector online** (model loaded). `backend/samples/demo_drive.webm` exists (see "Demo video" below).
 - [ ] **Internet is on** (route planning uses OSRM and OpenStreetMap search; map tiles load online).
 - [ ] **Allow location** in the browser and check that the trip page says *Vehicle GPS is pinned*.
 - [ ] **Plan the demo trip from the venue**: set the pickup point to the school/building you present in,
@@ -17,7 +17,7 @@
 
 | Time | Screen | Say / do |
 | --- | --- | --- |
-| 0:00 | **Slides → Results** | "This is the detector on its own": annotated held-out **test** images. Point at boxes, class, confidence, Model A (road damage) vs Model B (obstruction) and the purple driving corridor. |
+| 0:00 | **Slides → Results** | "This is the detector on its own": annotated held-out **test** images. Point at boxes, class (pothole or severe road damage / cracks) and confidence. |
 | 0:45 | **Slides → Preprocessing** | Original vs model input; "CLAHE looks brighter to us, but the ablation showed the model does worse, so it is off by default." |
 | 1:30 | **Plan** | Pickup = the venue, delivery = a nearby market; tomatoes, 250 kg, small truck. Live route options with crop-risk scores. Choose the recommended route → **Use this route**. |
 | 2:30 | **Active trip** | Click **Analyse recorded drive** (or point the webcam at a person or a printed road photo). Boxes appear on the road camera panel. Wait for "Computer vision detected a road hazard — seen in 2 recent frames". Explain smoothing. |
@@ -31,7 +31,7 @@
 | Problem | Do this |
 | --- | --- |
 | Backend not reachable | Pages say so clearly; restart `scripts/start.ps1`. Meanwhile present screenshots. |
-| Recorded drive missing | Use the webcam in the trip (a person walking in front of it is an obstruction). |
+| Recorded drive missing | Use the webcam in the trip and point it at a printed pothole photo. |
 | Webcam blocked | Use **Analyse recorded drive**; it runs the same detector. |
 | No internet | Route planning is unavailable. Show the Results slide and the Evaluation page (works offline), then the trip from screenshots. |
 | Hazard confirmed but routes unchanged | The GPS position is not within 75 m of the route (or location was blocked). Say so honestly; the message on screen explains it. |

@@ -13,7 +13,7 @@ Slides with pending results show a clearly marked placeholder until evaluation i
 | 5 | System overview | Architecture diagram (shapes) | Camera → preprocess → 2 YOLO models → smoothing → confirm → re-route | Browser, FastAPI, OSRM |
 | 6 | Dataset | `dataset_samples.png` + `dataset_class_distribution.png` | Public labelled data: RDD2022 India subset (2,692 images) | Source splits kept, leakage check, class mapping |
 | 7 | Preprocessing | `preprocessing_before_after.png` | Orientation fix · letterbox 640 · CLAHE measured and turned off | We tested an assumption and the data said no |
-| 8 | CV method | Pipeline diagram + two-model table | YOLO11: fine-tuned (A) + pretrained (B) | Backbone/neck/head/NMS; transfer learning; corridor rule |
+| 8 | CV method | Pipeline diagram + transfer-learning table | YOLO11: COCO-pretrained, fine-tuned on road damage | Backbone/neck/head/NMS; transfer learning |
 | 9 | Implementation | Plan + Active Trip screenshots | Web app: route planning, live camera / recorded drive | Stack: Vue, FastAPI, Ultralytics, OpenCV |
 | 10 | Results | Annotated detections (`ml/reports/sample_detections/`) | Real detections on unseen test images | Point at classes and confidence |
 | 11 | Evaluation | Metric tiles + confusion matrix + PR curve | mAP@0.5 · precision · recall · F1 on the test split | Threshold chosen on validation |

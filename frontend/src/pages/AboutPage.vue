@@ -9,15 +9,15 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 const pipeline = [
   { icon: Camera, title: 'Capture', text: 'Phone or dashcam frame, uploaded photo or recorded video' },
   { icon: Layers, title: 'Preprocess', text: 'Fix orientation · letterbox to 640×640 · optional CLAHE' },
-  { icon: Cpu, title: 'Detect (2 models)', text: 'A: fine-tuned YOLO for potholes and cracks · B: pretrained COCO YOLO for obstructions' },
-  { icon: ScanSearch, title: 'Filter', text: 'Confidence threshold · driving-corridor rule · hazard must appear in 2 of 3 frames' },
+  { icon: Cpu, title: 'Detect', text: 'YOLO11, pretrained on COCO and fine-tuned by us on road images: potholes and cracks (severe road damage)' },
+  { icon: ScanSearch, title: 'Filter', text: 'Confidence threshold chosen on validation · hazard must appear in 2 of 3 frames' },
   { icon: ShieldCheck, title: 'Confirm', text: 'Driver confirms by tap or voice; evidence frame and GPS are saved' },
   { icon: MapIcon, title: 'Re-route', text: 'Hazards within 75 m raise the route’s road risk, weighted by crop sensitivity' },
 ]
 
 const beneficiaries = [
   { title: 'Smallholder farmers', text: 'Fewer bruised and spoiled harvests on the way to market.' },
-  { title: 'Haulers and drivers', text: 'Early warning of potholes and obstructions; safer, smoother routes.' },
+  { title: 'Haulers and drivers', text: 'Early warning of potholes and cracked pavement; safer, smoother routes.' },
   { title: 'Cooperatives and traders', text: 'Route choice that weighs crop sensitivity, not just travel time.' },
   { title: 'LGU road maintenance', text: 'Geotagged, photo-verified reports of road damage on farm-to-market roads.' },
 ]
@@ -54,9 +54,9 @@ const beneficiaries = [
         <CardHeader><CardTitle>Objectives</CardTitle></CardHeader>
         <CardContent>
           <ol class="about-list">
-            <li><strong>Detect</strong> potholes, severe road damage and road obstructions in real time from an ordinary phone or dashcam.</li>
-            <li><strong>Improve</strong> detection in poor light with preprocessing, and measure that improvement.</li>
-            <li><strong>Reduce false alarms</strong> using a driving-corridor rule and multi-frame confirmation.</li>
+            <li><strong>Detect</strong> potholes and cracks (severe road damage) in real time from an ordinary phone or dashcam.</li>
+            <li><strong>Test</strong> preprocessing (CLAHE) with an ablation and keep only what measurably helps.</li>
+            <li><strong>Reduce false alarms</strong> with a tuned confidence threshold and multi-frame confirmation.</li>
             <li><strong>Turn detections into decisions</strong>: confirmed hazards re-rank routes by crop-spoilage risk.</li>
             <li><strong>Prove it</strong> with precision, recall, mAP, a confusion matrix and error analysis on unseen images.</li>
           </ol>
@@ -91,9 +91,8 @@ const beneficiaries = [
             confidence for each region. <strong>Non-maximum suppression</strong> then keeps the best box where several overlap.
           </p>
           <p>
-            <strong>Pretrained + fine-tuned.</strong> Model A starts from YOLO weights already trained on 118,000 everyday
-            COCO photos, then learns potholes and cracks from labelled road images (transfer learning). Model B is that same COCO
-            model, used without changes, to spot people, animals and vehicles blocking the lane.
+            <strong>Pretrained + fine-tuned.</strong> The detector starts from YOLO weights already trained on 118,000 everyday
+            COCO photos, then learns potholes and cracks from labelled road images (transfer learning).
           </p>
           <p>
             <strong>Why CLAHE?</strong> Contrast Limited Adaptive Histogram Equalisation brightens dark regions tile by tile while

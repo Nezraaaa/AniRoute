@@ -23,7 +23,7 @@ plus a `data.yaml` that names the classes and the folders. Images are split into
 | 0 | `pothole` | potholes (RDD2022 `D40`) |
 | 1 | `severe_road_damage` | alligator, longitudinal and transverse cracking (RDD2022 `D20`, `D00`, `D10`) |
 
-`road_obstruction` comes from Model B (COCO, no training). `standing_water` is driver-reported only.
+The project focuses on these two road-damage classes. `standing_water` is driver-reported only.
 
 ## Source actually used
 

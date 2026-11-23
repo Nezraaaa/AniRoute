@@ -2,15 +2,14 @@
 
 **CSST 106 Final Project · Real-World Perception and Computer Vision System**
 Field: agriculture and transportation · CV tasks: object detection, real-time video detection.
-
-A phone or dashcam on a farm-produce vehicle detects road hazards with two YOLO models. **Model A** is
-fine-tuned from COCO-pretrained weights to find potholes and severe road damage. **Model B** is the
-COCO-pretrained model used as-is to find obstructions (people, animals, vehicles) in the driving lane.
+A phone or dashcam on a farm-produce vehicle detects road damage with a YOLO11 model, pretrained on COCO and
+fine-tuned by us to find **potholes and cracks** (severe road damage). Obstruction
+detection (a COCO-pretrained second model) is implemented but switched off: the project focuses on road damage.
 Hazards seen in 2 of 3 frames alert the driver; confirmed hazards are geotagged and raise the road risk
 of every route that passes them, weighted by how fragile the crop is, so the app can recommend a safer
 route.
 
-![Detections on held-out test images](ml/reports/sample_detections/test_severe_road_damage_05.jpg)
+![Detections on held-out test images](ml/reports/sample_detections/test_pothole_06.jpg)
 
 ## Quick start
 

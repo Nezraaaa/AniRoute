@@ -4,12 +4,12 @@
   "frames_analysed": 72,
   "sample_fps": 2.0,
   "without_smoothing": {
-    "alerts": 39,
-    "alerts_per_minute": 65.0
+    "alerts": 18,
+    "alerts_per_minute": 30.0
   },
   "with_smoothing": {
-    "alerts": 4,
-    "alerts_per_minute": 6.7,
+    "alerts": 2,
+    "alerts_per_minute": 3.3,
     "window": 3,
     "min_hits": 2,
     "cooldown_s": 20.0
@@ -19,18 +19,6 @@
       "t": 0.5,
       "hazard_type": "severe_road_damage",
       "confidence": 0.351,
-      "verdict": "review"
-    },
-    {
-      "t": 2.0,
-      "hazard_type": "road_obstruction",
-      "confidence": 0.854,
-      "verdict": "review"
-    },
-    {
-      "t": 26.0,
-      "hazard_type": "road_obstruction",
-      "confidence": 0.77,
       "verdict": "review"
     },
     {

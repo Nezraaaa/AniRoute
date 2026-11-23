@@ -89,7 +89,8 @@ class VisionSettings:
     model_b_path: Path = field(default_factory=lambda: Path(os.getenv(
         "ANIROUTE_OBSTRUCTION_MODEL_PATH", str(MODELS_DIR / "yolo11n.pt"))))
     model_format: str = field(default_factory=lambda: os.getenv("ANIROUTE_MODEL_FORMAT", "auto").lower())
-    enable_model_b: bool = field(default_factory=lambda: _env_bool("ANIROUTE_ENABLE_OBSTRUCTION_MODEL", True))
+    # Project scope is road-surface damage (potholes and cracks); the COCO obstruction model is optional.
+    enable_model_b: bool = field(default_factory=lambda: _env_bool("ANIROUTE_ENABLE_OBSTRUCTION_MODEL", False))
     imgsz: int = field(default_factory=lambda: _env_int("ANIROUTE_IMGSZ", 640))
     conf_a: float = field(default_factory=lambda: _env_float(
         "ANIROUTE_CONF_THRESHOLD", evaluated_operating_threshold() or 0.35))

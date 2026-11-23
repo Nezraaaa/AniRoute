@@ -529,7 +529,9 @@ def cmd_latency(args) -> None:
     if not images:
         raise SystemExit(f"No images in {image_dir}")
     rows = []
-    candidates = [("Model A", Path(args.weights)), ("Model B", Path(args.obstruction_weights))]
+    candidates = [("Model A", Path(args.weights))]
+    if VisionSettings(warmup=False).enable_model_b:   # the optional obstruction model is off by default
+        candidates.append(("Model B", Path(args.obstruction_weights)))
     for label, weights in candidates:
         if not weights.exists():
             print(f"  skip {label}: {weights} not found")

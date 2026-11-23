@@ -12,7 +12,7 @@ flowchart LR
     subgraph API["FastAPI backend (laptop CPU)"]
         PRE["Preprocessing<br/>EXIF · letterbox 640 · CLAHE optional (off)"]
         A["Model A<br/>YOLO11 fine-tuned<br/>pothole · severe road damage"]
-        B["Model B<br/>YOLO11n COCO-pretrained<br/>person · animals · vehicles"]
+        B["Optional Model B (off)<br/>COCO-pretrained<br/>obstructions"]
         ROI["Driving-corridor rule<br/>(Model B only)"]
         MERGE["Merge → hazard types"]
         SMOOTH["Temporal smoothing<br/>2 of 3 frames · cooldown · dedupe"]

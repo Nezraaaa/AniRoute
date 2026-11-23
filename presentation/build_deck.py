@@ -193,7 +193,7 @@ text(s, Inches(0.8), Inches(2.9), Inches(6.2), Inches(1.4),
      "Real-time road-hazard detection for crop-aware farm-to-market delivery", size=24, color=RGBColor(0xDC, 0xEC, 0xE0))
 text(s, Inches(0.8), Inches(5.9), Inches(6), Inches(0.5), "Computer vision · YOLO object detection · Agriculture & transportation",
      size=13, color=RGBColor(0x9C, 0xC9, 0xAE))
-picture(s, DETECTIONS / "test_severe_road_damage_05.jpg", Inches(7.4), Inches(1.0), Inches(5.4), Inches(5.5))
+picture(s, DETECTIONS / "test_severe_road_damage_01.jpg", Inches(7.4), Inches(1.0), Inches(5.4), Inches(5.5))
 notes(s, "Team names. One sentence: AniRoute uses a phone or dashcam to detect road hazards with YOLO and re-routes "
          "perishable harvests away from them.")
 
@@ -207,7 +207,7 @@ for index, (label, low, high, color) in enumerate([("Fruits", 5, 48, AMBER), ("V
     span = rect(s, Inches(2.6 + 6.5 * low / 60), y, Inches(6.5 * (high - low) / 60), Inches(0.55), fill=color, shape=MSO_SHAPE.RECTANGLE)
     text(s, Inches(9.3), y, Inches(3.5), Inches(0.55), f"{low}–{high}% postharvest loss", size=18, bold=True, color=INK, anchor=MSO_ANCHOR.MIDDLE)
 text(s, Inches(0.6), Inches(4.7), Inches(12), Inches(1.2),
-     ["Potholes, cracked pavement and obstructions on farm-to-market roads add bruising and delay.",
+     ["Potholes and cracked pavement on farm-to-market roads add bruising and delay.",
       "Drivers see hazards only when they reach them; route planners ignore how fragile the cargo is."], size=18, color=MUTED)
 text(s, Inches(0.6), Inches(6.7), Inches(12), Inches(0.4),
      "Source: JICA, Data collection survey on the food value chain (Philippines) — openjicareport.jica.go.jp/pdf/1000035809.pdf",
@@ -218,8 +218,8 @@ notes(s, "Quote the ranges, not a single number. Rough roads: World Bank Mindana
 # 3 Objectives
 s = prs.slides.add_slide(BLANK)
 title(s, "What the system must do", "Objectives")
-objectives = [("Detect", "Potholes, road damage and obstructions in real time"), ("Test preprocessing", "CLAHE ablation, decided on validation"),
-              ("Avoid false alarms", "Driving corridor + 2-of-3 frames"), ("Re-route", "Confirmed hazards raise route risk"),
+objectives = [("Detect", "Potholes and cracks in real time"), ("Test preprocessing", "CLAHE ablation, decided on validation"),
+              ("Avoid false alarms", "Tuned threshold + 2-of-3 frames"), ("Re-route", "Confirmed hazards raise route risk"),
               ("Prove it", "P, R, F1, mAP, confusion matrix")]
 for index, (head, body) in enumerate(objectives):
     box = rect(s, Inches(0.6 + index * 2.5), Inches(2.3), Inches(2.3), Inches(3.0), fill=WHITE, line=RGBColor(0xDF, 0xE6, 0xDF))
@@ -227,7 +227,7 @@ for index, (head, body) in enumerate(objectives):
     card_text(badge, [str(index + 1)], size=14, color=WHITE, align=PP_ALIGN.CENTER)
     text(s, Inches(0.75 + index * 2.5), Inches(3.3), Inches(2.0), Inches(0.5), head, size=18, bold=True, color=GREEN_DARK)
     text(s, Inches(0.75 + index * 2.5), Inches(3.9), Inches(2.0), Inches(1.3), body, size=14, color=MUTED)
-notes(s, "Each objective maps to a later slide: detection (results), preprocessing (ablation), smoothing (Model B), "
+notes(s, "Each objective maps to a later slide: detection (results), preprocessing (ablation), smoothing (evaluation), "
          "routing (demo), evaluation.")
 
 # 4 Significance
@@ -243,17 +243,16 @@ notes(s, "Concrete benefit per group. LGUs get a by-product: a map of confirmed 
 # 5 System overview
 s = prs.slides.add_slide(BLANK)
 title(s, "System overview", "Architecture")
-steps = [("Capture", "camera · video · image"), ("Preprocess", "EXIF · 640 px letterbox"), ("Model A", "fine-tuned YOLO\npotholes · cracks"),
-         ("Model B", "pretrained COCO\nobstructions"), ("Filter", "threshold · corridor\n2 of 3 frames"), ("Confirm", "driver · GPS · evidence"),
-         ("Re-route", "risk × crop sensitivity")]
-positions = [(0.5, 3.0), (2.35, 3.0), (4.2, 2.0), (4.2, 4.0), (6.05, 3.0), (7.9, 3.0), (9.75, 3.0)]
+steps = [("Capture", "camera · video · image"), ("Preprocess", "EXIF · 640 px letterbox"), ("Model", "fine-tuned YOLO11\npotholes · cracks"),
+         ("Filter", "threshold\n2 of 3 frames"), ("Confirm", "driver · GPS · evidence"), ("Re-route", "risk × crop sensitivity")]
+positions = [(0.5, 3.0), (2.35, 3.0), (4.2, 3.0), (6.05, 3.0), (7.9, 3.0), (9.75, 3.0)]
 centers = []
 for (head, body), (x, y) in zip(steps, positions):
     fill = GREEN if head.startswith("Model") else WHITE
     box = rect(s, Inches(x), Inches(y), Inches(1.65), Inches(1.4), fill=fill, line=None if fill == GREEN else RGBColor(0xC9, 0xD6, 0xCB))
     card_text(box, [head, body], size=11, color=WHITE if fill == GREEN else GREEN_DARK, align=PP_ALIGN.CENTER)
     centers.append((Inches(x), Inches(y), Inches(1.65), Inches(1.4)))
-links = [(0, 1), (1, 2), (1, 3), (2, 4), (3, 4), (4, 5), (5, 6)]
+links = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
 for a, b in links:
     ax, ay, aw, ah = centers[a]
     bx, by, bw, bh = centers[b]
@@ -262,7 +261,7 @@ text(s, Inches(11.5), Inches(3.0), Inches(1.6), Inches(1.4), "Map + new route re
 text(s, Inches(0.6), Inches(6.2), Inches(12), Inches(0.6),
      "Vue web app  →  FastAPI  →  OpenCV + Ultralytics YOLO (PyTorch / ONNX / OpenVINO, CPU)  →  OSRM routing  →  MapLibre map",
      size=13, color=MUTED)
-notes(s, "Both models see the same preprocessed frame. Model B objects count only inside the driving corridor. "
+notes(s, "One fine-tuned detector for potholes and cracks. "
          "Alerts need the hazard in 2 of the last 3 frames. Confirmed hazards within 75 m of a route raise its road risk.")
 
 # 6 Dataset
@@ -297,11 +296,11 @@ for index, (head, body) in enumerate([("Backbone", "edges, textures,\nshapes"), 
     card_text(box, [head, body], size=13, color=GREEN_DARK, align=PP_ALIGN.CENTER)
     if index < 3:
         arrow(s, Inches(3.2 + index * 3.1), Inches(2.4), Inches(3.7 + index * 3.1), Inches(2.4))
-rows = [("", "Model A — road surface", "Model B — obstructions"),
-        ("Weights", "COCO-pretrained → fine-tuned by us", "COCO-pretrained, used as-is"),
-        ("Classes", "pothole · severe road damage", "person, animals, vehicles → obstruction"),
-        ("Rule", "confidence ≥ threshold (max F1 on val)", "inside driving corridor and close"),
-        ("Why", "road damage is not in COCO", "COCO already knows these objects")]
+rows = [("", "Pretrained (COCO)", "Fine-tuned by us (AniRoute)"),
+        ("Data", "118k everyday photos, 80 classes", "1,800 road images, RDD2022 India"),
+        ("Classes", "people, cars, animals … (no road damage)", "pothole · severe road damage (cracks)"),
+        ("What we keep", "backbone + neck: edges, textures, shapes", "new head trained for our 2 classes"),
+        ("Threshold", "—", "confidence 0.145 (max F1 on validation)")]
 table = s.shapes.add_table(len(rows), 3, Inches(0.6), Inches(3.5), Inches(12.1), Inches(3.0)).table
 for r, row in enumerate(rows):
     for c, value in enumerate(row):
@@ -327,12 +326,12 @@ notes(s, "Plan: live routes scored for crop fragility and confirmed hazards. Act
 # 10 Results
 s = prs.slides.add_slide(BLANK)
 title(s, "Detections on images the model never saw", "Results")
-shown = [DETECTIONS / name for name in ("test_severe_road_damage_05.jpg", "test_pothole_06.jpg", "street_bus_pedestrians.jpg")]
+shown = [DETECTIONS / name for name in ("test_pothole_06.jpg", "test_severe_road_damage_01.jpg", "test_pothole_02.jpg")]
 for index, path in enumerate(p for p in shown if p.exists()):
     picture(s, path, Inches(0.6 + index * 4.1), Inches(1.6), Inches(3.9), Inches(4.6))
 text(s, Inches(0.6), Inches(6.4), Inches(12), Inches(0.5),
-     "Real output of the deployed model: road damage (Model A), obstructions inside the purple driving corridor (Model B).", size=13, color=MUTED)
-notes(s, "Point at class, confidence and model. Mention the obstruction example uses the pretrained model and the corridor rule.")
+     "Real output of the deployed model on held-out test images: potholes (orange) and cracks / severe road damage (red).", size=13, color=MUTED)
+notes(s, "Point at class and confidence. These images were never used in training.")
 
 # 11 Evaluation
 s = prs.slides.add_slide(BLANK)

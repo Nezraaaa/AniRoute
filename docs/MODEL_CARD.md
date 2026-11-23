@@ -42,8 +42,8 @@ for our 2 classes, and training adjusts the whole network to road surfaces. This
 images and training time than starting from random weights (preset **E7** in `train.py` trains from
 scratch for comparison; it was not run because it needs a GPU).
 
-Model B shows the other use of pretraining: COCO already contains cows, horses, dogs, people and vehicles,
-so no training is needed — only a rule (the driving corridor) that decides when such an object is a
+An optional second model (COCO-pretrained, used as-is, for people, animals and vehicles in the lane) is
+implemented but **switched off**: the project focuses on road damage. When enabled, a rule (the driving corridor) decides when such an object is a
 hazard rather than normal traffic at the roadside.
 
 ## Preprocessing

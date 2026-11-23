@@ -89,11 +89,11 @@ images), so that column is indicative only. `ablation_bar.png`, `preprocessing_b
 
 | Model | PyTorch 640 | ONNX 640 | OpenVINO 640 |
 | --- | ---: | ---: | ---: |
-| Model A (road damage) | 42.8 ms | 38.5 ms | **33.3 ms** |
-| Model B (COCO obstructions) | 45.7 ms | 39.4 ms | **33.7 ms** |
+| Pothole and crack detector | 50.8 ms | 39.3 ms | **37.7 ms** |
 
-End to end (preprocessing + both models + merging, auto-selected OpenVINO): **57.6 ms per frame ≈ 17 FPS**
-(95th percentile 67 ms). The app only needs 2 frames per second during a trip, so there is ample headroom.
+End to end (preprocessing + detection, auto-selected OpenVINO): **33.2 ms per frame ≈ 30 FPS** (95th
+percentile 41 ms). OpenVINO is 26% faster than PyTorch on the same CPU. The app only needs 2 frames per
+second during a trip, so there is ample headroom.
 Re-run `python ml/evaluate.py latency` on the laptop you present with. `latency.json`, `speed_chart.png`.
 
 ![Speed](../ml/reports/speed_chart.png)
@@ -102,18 +102,12 @@ Re-run `python ml/evaluate.py latency` on the laptop you present with. `latency.
 
 | | Alerts | Alerts per minute |
 | --- | ---: | ---: |
-| Every frame with a detection | 39 | 65 |
-| **2-of-3 frames + 20 s cooldown** | **4** | **6.7** |
+| Every frame with a detection | 18 | 30 |
+| **2-of-3 frames + 20 s cooldown** | **2** | **3.3** |
 
-Smoothing cut alerts by 90%, the difference between an app a driver ignores and one they can use.
-`smoothing.json` lists the 4 remaining alerts; watch the video and mark each `true`/`false` to report false
+Smoothing cut alerts by 89%, the difference between an app a driver ignores and one they can use.
+`smoothing.json` lists the 2 remaining alerts; watch the video and mark each `true`/`false` to report false
 alarms per minute.
-
-### Model B (obstructions)
-
-Not measured: we did not label an obstruction test set. Model B is the unchanged COCO model, so its
-accuracy is the published COCO accuracy; our contribution is the driving-corridor rule, demonstrated on
-the annotated sample images (`ml/reports/sample_detections/`) and in the live trip. This is a stated limitation.
 
 ### Error analysis
 
