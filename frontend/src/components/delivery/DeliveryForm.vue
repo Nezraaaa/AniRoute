@@ -127,7 +127,7 @@ function submitForm() {
                 <div class="field-group">
                   <Label :for="`crop-quantity-${index}`">Quantity</Label>
                   <div class="unit-input">
-                    <Input :id="`crop-quantity-${index}`" :model-value="crop.quantity > 0 ? crop.quantity : ''" type="number" inputmode="decimal" min="1" max="100000" step="0.1" placeholder="Amount" required :invalid="Boolean(errors[`crop-quantity-${index}`])" :aria-describedby="`crop-quantity-${index}-error`" @update:model-value="updateCropQuantity(index, $event)" />
+                    <Input :id="`crop-quantity-${index}`" :model-value="crop.quantity > 0 ? crop.quantity : ''" type="number" inputmode="decimal" min="1" max="100000" step="0.1" placeholder="Qty" required :invalid="Boolean(errors[`crop-quantity-${index}`])" :aria-describedby="`crop-quantity-${index}-error`" @update:model-value="updateCropQuantity(index, $event)" />
                     <span class="unit-suffix">kg</span>
                   </div>
                   <p v-if="errors[`crop-quantity-${index}`]" :id="`crop-quantity-${index}-error`" class="field-error" role="alert">{{ errors[`crop-quantity-${index}`] }}</p>
@@ -144,6 +144,7 @@ function submitForm() {
             <div class="select-with-icon">
               <Truck :size="17" aria-hidden="true" />
               <select id="vehicle" v-model="trip.vehicle" class="field-control field-control-icon" :aria-invalid="Boolean(errors.vehicle)" aria-describedby="vehicle-error">
+                <option value="" disabled>Choose a vehicle</option>
                 <option v-for="vehicle in vehicleChoices" :key="vehicle.value" :value="vehicle.value">{{ vehicle.label }}</option>
               </select>
               <ChevronDown class="select-chevron" :size="17" aria-hidden="true" />

@@ -174,7 +174,7 @@ select.field-control {
 .map-fallback, .map-loading { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px; padding: 20px; color: #475449; background: rgba(237, 241, 232, .95); text-align: center; }
 .map-fallback strong { font-size: 15px; }
 .map-fallback span, .map-loading { font-size: 13px; }
-.map-empty-state { position: absolute; z-index: 1; top: 50%; left: 50%; display: flex; width: min(280px, calc(100% - 32px)); align-items: flex-start; gap: 10px; padding: 14px 15px; border: 1px solid rgba(216, 225, 214, .94); border-radius: 15px; color: #405247; background: rgba(255, 255, 255, .93); box-shadow: 0 8px 24px rgba(33, 53, 38, .13); transform: translate(-50%, -50%); pointer-events: none; }
+.map-empty-state { position: absolute; z-index: 1; top: 14px; left: 14px; display: flex; width: min(280px, calc(100% - 32px)); align-items: flex-start; gap: 10px; padding: 14px 15px; border: 1px solid rgba(216, 225, 214, .94); border-radius: 15px; color: #405247; background: rgba(255, 255, 255, .93); box-shadow: 0 8px 24px rgba(33, 53, 38, .13); pointer-events: none; }
 .map-empty-state > svg { flex: 0 0 auto; margin-top: 1px; color: #246346; }
 .map-empty-state div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .map-empty-state strong { color: #263a2d; font-size: 13px; line-height: 1.3; }

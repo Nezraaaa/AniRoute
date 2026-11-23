@@ -349,7 +349,7 @@ def _risk_label(score: int) -> str:
     return "higher" if score >= 60 else "moderate" if score >= 35 else "lower"
 
 
-def _live_routes(trip: TripInput) -> dict:
+def _live_routes(trip: TripInput, keep_route_id: str | None = None) -> dict:
     if not LIVE_ROUTING_ENABLED:
         raise HTTPException(status_code=503, detail="Live route engine is disabled. Set ANIROUTE_LIVE_ROUTING_ENABLED=true.")
 
@@ -451,6 +451,10 @@ def _live_routes(trip: TripInput) -> dict:
             "known_hazards": candidate["hazard_pins"],
         })
 
+    # Only list roads that win a category (recommended, fastest, safest). Every road is still scored, so a
+    # detour appears as soon as it becomes, say, the safest one after a hazard is confirmed.
+    # The route a driver is already on always stays listed, even if it no longer wins a category.
+    route_data = [route for route in route_data if route["categories"] or route["route_id"] == keep_route_id]
     # Recommended first, then the others from fastest to slowest (ids stay tied to the provider route).
     route_data.sort(key=lambda route: (not route["recommended"], route["travel_time_minutes"]))
     recommended_route = next(route for route in route_data if route["recommended"])
@@ -593,7 +597,7 @@ def calculate_routes(trip: TripInput) -> dict:
 
 @app.post("/api/routes/recalculate")
 def recalculate_routes(payload: RecalculateInput) -> dict:
-    result = _live_routes(payload.trip)
+    result = _live_routes(payload.trip, keep_route_id=payload.active_route_id)
     recommended_id = result["recommended_route_id"]
     result["changed"] = recommended_id != payload.active_route_id
     active = next((route for route in result["routes"] if route["route_id"] == payload.active_route_id), None)

@@ -102,11 +102,12 @@ function displayPlace(value: string, fallback: string) {
 
 type MapPoint = [number, number]
 
+// Default view: the whole Philippines, flat and centred (Batanes to Mindanao).
 const philippinesMapView = {
-  center: [121.8, 12.3] as MapPoint,
-  zoom: 4.8,
-  pitch: 46,
-  bearing: -10,
+  center: [122.0, 12.9] as MapPoint,
+  zoom: 4.45,
+  pitch: 0,
+  bearing: 0,
 }
 
 function pointFromCoordinates(value: Coordinates | null | undefined): MapPoint | null {

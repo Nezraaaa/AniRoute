@@ -2,6 +2,7 @@ import { computed, reactive } from 'vue'
 import type { Coordinates, DetectedHazard, RouteOption, TripInput } from '@/types/aniRoute'
 
 /** Pre-filled trip so the planner opens ready to search; every value can be edited. */
+// Example trip used by the tests; the app itself starts with an empty form (emptyTrip).
 export const defaultTrip: TripInput = {
   crop: 'Tomatoes',
   quantity: 250,
@@ -13,10 +14,21 @@ export const defaultTrip: TripInput = {
   deliveryPoints: ['Calamba, Laguna'],
 }
 
+export const emptyTrip: TripInput = {
+  crop: '',
+  quantity: 0,
+  cropLoads: [{ name: '', quantity: 0 }],
+  unit: 'kg',
+  vehicle: '',
+  origin: '',
+  destination: '',
+  deliveryPoints: [''],
+}
+
 const trip = reactive<TripInput>({
-  ...defaultTrip,
-  cropLoads: defaultTrip.cropLoads.map(crop => ({ ...crop })),
-  deliveryPoints: [...defaultTrip.deliveryPoints],
+  ...emptyTrip,
+  cropLoads: emptyTrip.cropLoads.map(crop => ({ ...crop })),
+  deliveryPoints: [...emptyTrip.deliveryPoints],
 })
 const routes = reactive<RouteOption[]>([])
 const state = reactive({
@@ -31,9 +43,9 @@ const state = reactive({
   uploadMessage: '',
   newRecommendedRouteId: null as string | null,
   apiConnected: false,
-  originCoordinates: { latitude: 16.4023, longitude: 120.596 } as Coordinates | null,
-  destinationCoordinates: { latitude: 14.2117, longitude: 121.1653 } as Coordinates | null,
-  deliveryPointCoordinates: [{ latitude: 14.2117, longitude: 121.1653 }] as Array<Coordinates | null>,
+  originCoordinates: null as Coordinates | null,
+  destinationCoordinates: null as Coordinates | null,
+  deliveryPointCoordinates: [null] as Array<Coordinates | null>,
 })
 
 const selectedRoute = computed(() => routes.find(route => route.id === state.selectedRouteId) ?? routes[0] ?? null)

@@ -204,3 +204,20 @@ def test_detour_alternatives_keep_real_roads_and_reject_spurs(monkeypatch: pytes
     assert routes[0] is direct
     assert west in routes and spur not in routes and too_slow not in routes
     assert routes.count(west) == 1   # the same road found twice is kept once
+
+
+def test_only_category_winning_routes_are_listed_but_the_active_route_is_kept(monkeypatch: pytest.MonkeyPatch, data_dir: Path):
+    stops = [main.Coordinates(latitude=16.402, longitude=120.596), main.Coordinates(latitude=14.2117, longitude=121.1653)]
+    monkeypatch.setattr(main, "_resolve_trip_stops", lambda trip: stops)
+    monkeypatch.setattr(main, "_request_routing_routes", lambda resolved_stops, alternatives=True: live_provider_routes())
+    trip = main.TripInput(**{"crop": "Tomatoes", "quantity": 250, "vehicle": "Small truck",
+                             "origin": "Baguio City", "destination": "Calamba"})
+
+    listed = main._live_routes(trip)["routes"]
+    assert listed and all(route["categories"] for route in listed)          # no unlabelled "alternative" roads
+    dropped = {"route-1", "route-2", "route-3"} - {route["route_id"] for route in listed}
+    assert dropped, "fixture should contain at least one road that wins nothing"
+
+    kept_id = sorted(dropped)[0]
+    with_active = main._live_routes(trip, keep_route_id=kept_id)["routes"]
+    assert kept_id in {route["route_id"] for route in with_active}

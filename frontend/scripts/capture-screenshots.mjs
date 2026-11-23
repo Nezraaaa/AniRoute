@@ -34,6 +34,25 @@ async function shoot(page, name, options = {}) {
   shots.push(file)
 }
 
+async function pickLocation(page, inputId, query) {
+  await page.fill(`#${inputId}`, query)
+  const option = page.locator('.location-suggestion').first()
+  await option.waitFor({ timeout: 20000 }).catch(() => undefined)
+  if (await option.isVisible().catch(() => false)) await option.click()
+}
+
+// The app starts with an empty form; fill in an example trip and ask for routes.
+async function planExampleTrip(page) {
+  await page.fill('#crop-0', 'Tomatoes')
+  await page.fill('#crop-quantity-0', '250')
+  await page.selectOption('#vehicle', { index: 1 })
+  await pickLocation(page, 'origin', 'Baguio City')
+  await pickLocation(page, 'destination-0', 'Calamba, Laguna')
+  await page.getByRole('button', { name: /find routes/i }).click()
+  await page.waitForSelector('.route-select-button', { timeout: 60000 }).catch(() => undefined)
+  await page.waitForTimeout(2500)
+}
+
 async function run(viewport, suffix) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1 })
   const page = await context.newPage()
@@ -41,8 +60,9 @@ async function run(viewport, suffix) {
   page.on('pageerror', error => log.push(`[${suffix}] pageerror: ${error.message}`))
 
   await page.goto(`${appUrl}/`, { waitUntil: 'networkidle' })
-  await page.waitForSelector('.route-select-button', { timeout: 30000 }).catch(() => undefined)
   await page.waitForTimeout(1500)
+  await shoot(page, `00-plan-empty${suffix}`)
+  await planExampleTrip(page)
   await shoot(page, `01-plan${suffix}`)
 
   await page.goto(`${appUrl}/evaluation`, { waitUntil: 'networkidle' })
@@ -55,7 +75,7 @@ async function run(viewport, suffix) {
 
   // Trip: plan (live routes) → use route → active trip, analysing the recorded drive if one exists.
   await page.goto(`${appUrl}/`, { waitUntil: 'networkidle' })
-  await page.waitForTimeout(1000)
+  await planExampleTrip(page)
   let useRoute = page.getByRole('button', { name: /use this route/i }).first()
   if (!(await useRoute.isVisible().catch(() => false))) {
     await page.locator('.route-select-button').first().click()

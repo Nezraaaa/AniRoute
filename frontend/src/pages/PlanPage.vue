@@ -193,7 +193,7 @@ watch(() => store.trip.deliveryPoints.length, (count) => {
             <p class="eyebrow">Trip options</p>
             <h2 id="compare-heading">Compare routes</h2>
           </div>
-          <span class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} {{ displayRoutes.length === 1 ? 'option' : 'options' }}</span>
+          <span v-if="displayRoutes.length" class="options-count"><RouteIcon :size="16" aria-hidden="true" /> {{ displayRoutes.length }} {{ displayRoutes.length === 1 ? 'option' : 'options' }}</span>
         </div>
 
         <Alert v-if="generalError" variant="danger" class="integration-error-banner" role="alert">
