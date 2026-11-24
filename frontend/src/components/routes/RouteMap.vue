@@ -3,7 +3,7 @@ import { computed, createVNode, onBeforeUnmount, onMounted, ref, render, shallow
 import type { GeoJSONSource, LayerSpecification, Map as MapInstance, Marker as MapMarker, StyleSpecification } from 'maplibre-gl'
 import { MapPin } from '@lucide/vue'
 import { appConfig, defaultCartoStyleUrl, withCartoBasemapKey } from '@/services/config'
-import type { Coordinates, RouteOption, TripInput } from '@/types/aniRoute'
+import type { Coordinates, HazardPin, RouteOption, TripInput } from '@/types/aniRoute'
 
 const props = withDefaults(defineProps<{
   routes: RouteOption[]
@@ -14,7 +14,9 @@ const props = withDefaults(defineProps<{
   destinationCoordinates?: Coordinates | null
   deliveryPointCoordinates?: Array<Coordinates | null>
   active?: boolean
-}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false })
+  /** Hazards confirmed on this device: pinned even when they are too far from a route to change its score. */
+  extraHazards?: HazardPin[]
+}>(), { currentLocation: null, originCoordinates: null, destinationCoordinates: null, deliveryPointCoordinates: () => [], active: false, extraHazards: () => [] })
 
 const emit = defineEmits<{
   'point-dragged': [field: 'origin' | 'destination', coordinates: Coordinates, index?: number]
@@ -258,13 +260,11 @@ function createMarkers(shouldFitBounds = true) {
 
   // Known and camera-confirmed hazards (one pin per observation, even if several routes pass it).
   const pinned = new Set<string>()
-  for (const route of props.routes) {
-    for (const hazard of route.knownHazards ?? []) {
-      if (pinned.has(hazard.id)) continue
-      pinned.add(hazard.id)
-      markers.push(new Marker({ element: makeHazardMarker(hazard.name, hazard.note, hazard.hazardType), anchor: 'bottom' })
-        .setLngLat([hazard.coordinates.longitude, hazard.coordinates.latitude]).addTo(instance))
-    }
+  for (const hazard of [...props.routes.flatMap(route => route.knownHazards ?? []), ...props.extraHazards]) {
+    if (pinned.has(hazard.id)) continue
+    pinned.add(hazard.id)
+    markers.push(new Marker({ element: makeHazardMarker(hazard.name, hazard.note, hazard.hazardType), anchor: 'bottom' })
+      .setLngLat([hazard.coordinates.longitude, hazard.coordinates.latitude]).addTo(instance))
   }
 
   const selectedLines = routeLines().filter(route => !props.selectedRouteId || route.id === props.selectedRouteId)
@@ -508,7 +508,15 @@ watch(() => props.routes, () => {
 watch(() => [props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => {
   draggedPoints.value = { origin: null, destinations: {} }
 }, { deep: true })
-watch(() => [props.routes, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => updateRoutes(), { deep: true })
+// A hazard was just confirmed: switch to Overview and fly to its pin, so it is visible even off the route.
+watch(() => props.extraHazards.length, (count, previous) => {
+  const newest = props.extraHazards[count - 1]
+  const instance = map.value
+  if (!newest || count <= (previous ?? 0) || !instance) return
+  cameraMode.value = 'overview'
+  window.setTimeout(() => instance.flyTo({ center: [newest.coordinates.longitude, newest.coordinates.latitude], zoom: 15, pitch: 0, bearing: 0, duration: 1200 }), 350)
+})
+watch(() => [props.routes, props.extraHazards, props.selectedRouteId, props.currentLocation, props.trip.origin, props.trip.destination, props.trip.deliveryPoints, props.originCoordinates, props.destinationCoordinates, props.deliveryPointCoordinates], () => updateRoutes(), { deep: true })
 onBeforeUnmount(() => {
   if (styleFailureTimer) window.clearTimeout(styleFailureTimer)
   markers.forEach(marker => marker.remove())

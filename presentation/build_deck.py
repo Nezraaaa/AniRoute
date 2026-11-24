@@ -233,7 +233,7 @@ notes(s, "Problem.")
 # 3 Objectives
 s = new_slide()
 title(s, "What the system must do", "Objectives")
-objectives = [("Detect", "road cracks, live"), ("Preprocess", "test what helps"), ("Fewer false alarms", "threshold + 2 of 3 frames"),
+objectives = [("Detect", "potholes and cracks, live"), ("Preprocess", "test what helps"), ("Fewer false alarms", "threshold + 2 of 3 frames"),
               ("Re-route", "confirmed hazards raise risk"), ("Evaluate", "P · R · F1 · mAP")]
 for index, (head, body) in enumerate(objectives):
     x = 0.6 + index * 2.5
@@ -256,7 +256,7 @@ notes(s, "Significance.")
 # 5 System overview
 s = new_slide()
 title(s, "How AniRoute works", "System overview")
-steps = [("Capture", "camera or video"), ("Prepare", "orient · 640 px"), ("Our model", "cracked road"),
+steps = [("Capture", "camera or video"), ("Prepare", "orient · 640 px"), ("Our model", "cracks · potholes"),
          ("Filter", "0.40 · 2 of 3 frames"), ("Confirm", "tap or voice"), ("Re-route", "crop-aware risk")]
 for index, (head, body) in enumerate(steps):
     x = 0.55 + index * 2.12
@@ -277,7 +277,7 @@ split = STATS["images_per_split"] if STATS else {"train": 1800, "val": 448, "tes
 total = sum(split.get(k, 0) for k in ("train", "val", "test"))
 for index, (head, body) in enumerate([(f"{total:,}", "labelled road images"),
                                       (f"{split.get('train', 0):,} / {split.get('val', 0)} / {split.get('test', 0)}", "train / validation / test"),
-                                      ("3 crack types", "along · across · alligator")]):
+                                      ("2 classes", "cracks · potholes")]):
     card(s, 9.1, 1.95 + index * 1.42, 3.65, 1.25, head, body, fill=GREEN_LIGHT, size=16)
 text(s, 0.6, 6.35, 12.1, 0.5, "RDD2022 road damage dataset, India subset (CC BY 4.0) · test images never used for training", size=13, color=MUTED)
 notes(s, "Dataset.")
@@ -301,7 +301,7 @@ for index, (head, body) in enumerate([("Backbone", "edges · textures"), ("Neck"
     card(s, x, 1.75, 2.6, 1.45, head, body, fill=GREEN_LIGHT, size=16)
     if index < 3:
         arrow(s, x + 2.68, 2.3)
-facts = [("1,800", "road images we trained on"), ("3 crack types", "along · across · alligator"), ("40 epochs", "early stopping"), ("0.40", "app confidence threshold")]
+facts = [("1,800", "road images we trained on"), ("2 classes", "cracks · potholes"), ("40 epochs", "early stopping"), ("0.40", "app confidence threshold")]
 for index, (head, body) in enumerate(facts):
     card(s, 0.6 + index * 3.15, 3.85, 2.85, 2.0, head, body, size=20)
 pill(s, 0.6, 6.25, "One pass per frame → real time on a laptop CPU", fill=GREEN, color=WHITE)
@@ -316,7 +316,7 @@ label_on(s, g1, 0.62, 0.34, "3 route options", "2")
 label_on(s, g1, 0.75, 0.82, "Live road map", "3")
 g2 = picture(s, APP / "camera-card.png", 8.4, 1.55, 4.45, 5.3)
 label_on(s, g2, 0.5, 0.40, "Live road camera", "4")
-label_on(s, g2, 0.5, 0.86, "Detects cracks", "5")
+label_on(s, g2, 0.5, 0.87, "Detects potholes & cracks", "5")
 notes(s, "Implementation.")
 
 # 10 Results: a correct crack detection on an unseen road, and what that looks like across the test set
@@ -361,7 +361,7 @@ tiles = [(f"{CRACK_EVAL.get('ap50', CRACK_METRICS['ap50']):.3f}", "AP@0.5"), (f"
          (pct(app["precision"]), "Precision"), (pct(app["recall"]), "Recall"), (f"{app['f1']:.2f}", "F1")]
 for index, (value, label) in enumerate(tiles):
     card(s, 0.6 + index * 2.45, 1.55, 2.25, 1.25, value, label, fill=GREEN_LIGHT if index >= 2 else WHITE, size=18)
-pill(s, 0.6 + 3 * 2.45 + 1.1, 3.05, f"At threshold {app['threshold']:.2f} · precision is not accuracy", center=True)
+pill(s, 0.6 + 3 * 2.45 + 1.1, 3.05, f"Cracks at threshold {app['threshold']:.2f} · potholes: see slide 14", center=True)
 picture(s, CRACK / "pr_curve.png", 0.6, 3.45, 5.9, 3.7)
 picture(s, CRACK / "threshold_chart.png", 6.85, 3.45, 5.9, 3.7)
 notes(s, "Evaluation.")
@@ -396,7 +396,27 @@ large_found = 1 - (sizes["large"]["miss_rate"] or 0)
 pill(s, 13.333 / 2, 6.45, f"Large, clear cracks are found most ({large_found:.0%}); thin or distant ones are usually missed", fill=GREEN, color=WHITE, size=14, center=True)
 notes(s, "Error analysis.")
 
-# 14 Demo
+# 14 Data issue: the "pothole" labels were white lines
+s = new_slide()
+title(s, "What we found: the \"pothole\" labels were white lines", "Data issue")
+AUDIT = REPORTS / "pothole_audit"
+g = picture(s, AUDIT / "white_line_label_30.jpg", 0.6, 1.6, 4.4, 4.4, border=False)
+label_on(s, g, 0.5, 0.07, "A \"pothole\" in the public dataset", size=13)
+g2 = picture(s, AUDIT / "dataset_pothole_labels.jpg", 5.3, 1.6, 7.45, 1.86)
+label_on(s, g2, 0.5, 0.0, "Close-ups: the boxes frame faded white road lines", size=12)
+steps_ = [("1", "The public dataset labelled faded white lines as \"pothole\"", GREEN_LIGHT),
+          ("2", "So our model learned white lines, not real potholes", GREEN_LIGHT),
+          ("3", "Our fix: build our own pothole dataset, labelled by hand", AMBER)]
+for index, (number, line_, fill) in enumerate(steps_):
+    y = 3.75 + index * 0.78
+    badge = box(s, 5.3, y, 0.52, 0.52, fill=GREEN if fill != AMBER else AMBER, shape=MSO_SHAPE.OVAL)
+    fill_text(badge, [number], size=14, color=WHITE if fill != AMBER else AMBER_INK)
+    item = box(s, 5.95, y - 0.06, 6.8, 0.64, fill=fill if fill != AMBER else RGBColor(0xFF, 0xF1, 0xD6))
+    fill_text(item, [line_], size=14, color=GREEN_DARK if fill != AMBER else AMBER_INK, align=PP_ALIGN.LEFT, first_bold=index == 2, first_font=BODY_FONT)
+pill(s, 13.333 / 2, 6.45, "Cracks are not affected: their labels show real cracked pavement", fill=GREEN, color=WHITE, size=14, center=True)
+notes(s, "Data issue.")
+
+# 15 Demo
 s = new_slide(GREEN_DARK)
 text(s, 0.8, 2.4, 11.7, 1.2, "Live demonstration", size=52, bold=True, color=WHITE, align=PP_ALIGN.CENTER, font=TITLE_FONT)
 for index, step in enumerate(["Plan", "Drive", "Detect", "Confirm", "Re-route"]):
@@ -409,7 +429,7 @@ s = new_slide()
 title(s, "Limitations", "Honest assessment")
 recall = pct(HIGH_CONF["test"]["recall"]) if HIGH_CONF else "low"
 recall = pct(CRACK_METRICS["at_app_threshold"]["recall"])
-limits = [("Cracks only", "other damage types need more labelled data"), ("Low recall at 0.40", f"finds {recall} of cracks"),
+limits = [("Pothole data", "public labels were white lines; we need our own"), ("Low recall at 0.40", f"finds {recall} of cracks"),
           ("Foreign training data", "Indian roads, not Philippine"), ("Obstructions out of scope", "people, animals, trees"),
           ("Heuristic route weights", "needs field trials"), ("No distance estimate", "pinned at vehicle GPS")]
 for index, (head, body) in enumerate(limits):
@@ -421,7 +441,7 @@ notes(s, "Limitations.")
 s = new_slide()
 title(s, "Real-world use and next steps", "Application")
 picture(s, APP / "phone-trip.png", 0.6, 1.5, 3.0, 5.6)
-for index, (head, body) in enumerate([("Today", "phone on the dashboard warns the driver"), ("Next", "more damage types · Philippine road images"),
+for index, (head, body) in enumerate([("Today", "phone on the dashboard warns the driver"), ("Next", "collect & hand-label real potholes · Philippine roads"),
                                       ("Then", "on-phone model · shared hazard map"), ("Validate", "field trial on spoilage")]):
     card(s, 4.0, 1.55 + index * 1.4, 8.7, 1.2, head, body, fill=GREEN_LIGHT if index == 0 else WHITE, size=16)
 notes(s, "Next steps.")

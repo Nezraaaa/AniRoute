@@ -176,6 +176,17 @@ def test_confirmed_hazard_stores_geotag_and_evidence(data_dir: Path):
     assert (data_dir / saved["evidence_frame_path"]).read_bytes() == b"hello"
 
 
+def test_confirm_accepts_every_detector_the_scanner_can_report(data_dir: Path):
+    # The scanner reports model "A" (trained model), "B" (obstruction model) or "CV" (water-filled-pothole
+    # check); a confirmation from any of them must be accepted, or "Confirm & upload" fails with a 422.
+    for model, label in (("A", "severe_road_damage"), ("B", "cow"), ("CV", "water-filled pothole")):
+        payload = main.HazardConfirmation(
+            hazard_type="pothole", detected_at="2026-09-20T12:30:00Z", latitude=6.42, longitude=124.89,
+            route_id="optimal", road_segment_id="optimal-segment-2", simulated=True, model=model, source_label=label,
+        )
+        assert main.confirm_hazard(payload)["status"] == "uploaded"
+
+
 def test_hazard_requires_both_coordinates_or_neither():
     with pytest.raises(ValidationError):
         main.HazardConfirmation(

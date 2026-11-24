@@ -5,10 +5,11 @@ CSST 106 final presentation. The target is about 13 minutes of slides plus a 6�
 the deck's speaker notes, so it shows in PowerPoint's Presenter View. `presentation/build_deck.py`
 copies it from this file. The backup answers at the end are **not** copied into the deck.
 
-The deck is about what our trained model does: it detects **cracks** (the app labels them "severe road
-damage"). Every number is the crack result on the held-out test split (444 images, 189 labelled cracks),
-from `ml/reports/` (`metrics.json`, `crack/crack_metrics.json`). Keep the wording precise: **86%
-precision is not 86% accuracy.**
+Our model has two classes: **cracks** (the app labels them "severe road damage") and **potholes**. The
+results slides use the crack numbers, because the public dataset's pothole labels turned out to be white
+road lines (slide 14). Every number is from the held-out test split (444 images, 189 labelled cracks), in
+`ml/reports/` (`metrics.json`, `crack/crack_metrics.json`). Keep the wording precise: **86% precision is
+not 86% accuracy.**
 
 | # | Slide | Time | Cumulative |
 | --- | --- | --- | --- |
@@ -25,10 +26,11 @@ precision is not 86% accuracy.**
 | 11 | Evaluation | 1:15 | 9:05 |
 | 12 | Better and faster | 0:50 | 9:55 |
 | 13 | Error analysis | 0:50 | 10:45 |
-| 14 | Live demo | 6:00 | 16:45 |
-| 15 | Limitations | 0:45 | 17:30 |
-| 16 | Real-world use and next steps | 0:40 | 18:10 |
-| 17 | Thank you / Q&A | 0:15 | 18:25 |
+| 14 | Data issue: white-line "potholes" | 1:00 | 11:45 |
+| 15 | Live demo | 6:00 | 17:45 |
+| 16 | Limitations | 0:45 | 18:30 |
+| 17 | Real-world use and next steps | 0:40 | 19:10 |
+| 18 | Thank you / Q&A | 0:15 | 19:25 |
 
 ---
 
@@ -64,7 +66,7 @@ condition and the sensitivity of the crop, is what AniRoute addresses.
 
 **Say:**
 We set five objectives:
-1. Detect road cracks in real time from a phone camera.
+1. Detect potholes and cracks in real time from a phone camera.
 2. Test preprocessing properly: we measured CLAHE contrast enhancement instead of assuming it helps.
 3. Keep false alarms low with a tuned confidence threshold and a two-of-three-frames rule.
 4. Re-route: a hazard the driver confirms must raise the risk of the routes that pass it.
@@ -91,8 +93,8 @@ Follow the pipeline from left to right.
 
 1. **Capture:** a frame comes from the phone camera or a recorded drive.
 2. **Prepare:** we fix the photo's orientation and fit it to 640 by 640 pixels without stretching.
-3. **Our model:** the model we trained finds cracked road. This is the highlighted box, labelled
-   "Trained by us".
+3. **Our model:** the model we trained looks for cracks and potholes. This is the highlighted box,
+   labelled "Trained by us".
 4. **Filter:** a detection must reach 40 percent confidence and appear in two of the last three frames
    before the driver is alerted.
 5. **Confirm:** the driver confirms by tap or voice, and the evidence frame and GPS position are saved.
@@ -110,13 +112,14 @@ gives 2,692 road images:
 - 448 for validation
 - 444 for testing
 
-The red boxes are cracks drawn by human labellers. We combined three kinds of crack into one class,
-which the app calls "severe road damage":
+The model has two classes: cracks and potholes. The red boxes are cracks drawn by human labellers. We
+combined three kinds of crack into one class, which the app calls "severe road damage":
 - cracks running **along** the road,
 - cracks running **across** it,
 - and **alligator** cracking, a web of cracks.
 
-For a driver carrying produce, they all mean the same thing: rough road ahead.
+For a driver carrying produce, they all mean the same thing: rough road ahead. The pothole class has a
+story of its own, which we show on slide 14.
 
 Labels are in YOLO format: class, then box centre and size, normalised to the image. Test images are
 never used for training, and we removed near-duplicates from validation and test so the score isn't
@@ -142,8 +145,8 @@ through the network gives every box, label and confidence:
 - The **head** predicts the boxes.
 - **Non-maximum suppression** keeps the best box for each crack.
 
-We trained it on **1,800 labelled road images** covering **three crack types**, for 40 epochs with early
-stopping, on a laptop. The app runs it at a confidence of **0.40**, which we chose on the validation set
+We trained it on **1,800 labelled road images** for **two classes**, cracks and potholes, for 40 epochs
+with early stopping, on a laptop. The app runs it at a confidence of **0.40**, which we chose on the validation set
 so that most alerts the driver sees are real. One pass per frame is what makes it fast enough for real
 time on a laptop CPU.
 
@@ -161,9 +164,9 @@ This is the working application. Follow the numbers:
 
 On the right is the trip screen:
 4. The road camera, analysed live by our model.
-5. What it detects: cracks, shown as "severe road damage".
+5. What it detects: potholes and cracks (cracks are shown as "severe road damage").
 
-An alert appears only after a crack is seen in two of three frames.
+An alert appears only after a hazard is seen in two of three frames.
 
 **Point at:** labels 1 to 5, in order.
 
@@ -188,7 +191,8 @@ on a laptop. What matters for the driver is that 86 percent of alerts are real."
 ## Slide 11 · Evaluation (1:15)
 
 **Say:**
-This is the evaluation for cracks on the test split: 444 images with 189 labelled cracks.
+This is the evaluation for cracks on the test split: 444 images with 189 labelled cracks. As the label
+says, potholes are on slide 14, because their labels turned out to be faulty.
 
 The first two numbers don't depend on any threshold. **Average precision at 0.5 is 0.358**: the area
 under the precision-recall curve on the left. At the stricter 0.5 to 0.95 overlap it is **0.162**.
@@ -203,7 +207,7 @@ I want to be precise: that is 86 percent precision, **not** 86 percent accuracy.
 The chart on the right shows why we picked 0.40. As the threshold goes up, precision (green) rises and
 recall (red) falls. At 0.40 precision has climbed to about 86 percent, which keeps false alarms rare.
 
-**Point at:** the amber dot on the left curve, then the dashed line on the right chart.
+**Point at:** the amber label under the tiles, the amber dot on the left curve, then the dashed line on the right chart.
 
 ## Slide 12 · Making it better and faster (0:50)
 
@@ -230,7 +234,25 @@ the yellow frame marks the error.
 As the bottom label says, large, clear cracks are found most; thin or distant cracks are usually
 missed. More training images, especially local ones, is the fix.
 
-## Slide 14 · Live demonstration (6:00)
+## Slide 14 · Data issue: the "pothole" labels were white lines (1:00)
+
+**Say:**
+While checking our results, we looked closely at the boxes the public dataset had labelled "pothole".
+On the left is one of them: the box is around a faded **white line** on the road, not a hole. The
+close-ups on the right show the same thing again and again: faded lane paint, labelled as a pothole.
+
+1. The public dataset labelled faded white lines as "pothole".
+2. So our model learned to find white lines, not real potholes. That is why its pothole results aren't
+   meaningful, and why our results slides use cracks.
+3. Our fix is to **build our own pothole dataset**: collect real pothole photos, including on Philippine
+   roads, label each pothole by hand, and check every box before training again.
+
+As the green label says, cracks are not affected: their labels show real cracked pavement, which is why
+the crack results hold up.
+
+**Point at:** the box on the left, then the close-ups, then step 3.
+
+## Slide 15 · Live demonstration (6:00)
 
 **Say (opening):** "Let's see it working end to end."
 
@@ -253,11 +275,12 @@ missed. More training images, especially local ones, is the fix.
 **Backup:** if the internet or the camera fails, use the screenshots in `presentation/screenshots/`,
 follow `docs/DEMO_SCRIPT.md`, or play the product film.
 
-## Slide 15 · Limitations (0:45)
+## Slide 16 · Limitations (0:45)
 
 **Say:**
 We want to be clear about the limits:
-1. **Cracks only.** Other kinds of road damage need more labelled data before we add them.
+1. **Pothole data.** The public dataset's pothole labels were white lines, so we need our own
+   hand-labelled pothole photos before potholes can be detected reliably.
 2. **Low recall at the app threshold.** It finds 17 percent of cracks; night, rain and motion blur make
    it worse. We chose fewer false alarms over finding everything.
 3. **Foreign training data.** The model learned from Indian roads, and Philippine farm roads differ.
@@ -266,19 +289,19 @@ We want to be clear about the limits:
 5. **Route-risk weights are transparent heuristics**, not measured spoilage figures.
 6. **No distance estimate.** A hazard is pinned at the vehicle's GPS position when it is confirmed.
 
-## Slide 16 · Real-world use and next steps (0:40)
+## Slide 17 · Real-world use and next steps (0:40)
 
 **Say:**
 - **Today:** a phone on the dashboard warns the driver and re-checks the route.
-- **Next:** label more kinds of road damage and add Philippine road images, which is the biggest
-  accuracy win.
+- **Next:** collect real pothole photos and label them by hand, and add Philippine road images. That
+  is the biggest accuracy win.
 - **Then:** run the model on the phone itself, and share a hazard map with local governments.
 - **Finally, validate:** a field trial measuring spoilage with and without AniRoute. That is the only
   way to prove the real impact.
 
 The goal is fewer damaged harvests, safer drivers, and a living map of farm-to-market roads.
 
-## Slide 17 · Thank you / Q&A (0:15)
+## Slide 18 · Thank you / Q&A (0:15)
 
 **Say:**
 Thank you. We're happy to take your questions.
@@ -291,6 +314,8 @@ Thank you. We're happy to take your questions.
 - *"Why not a Philippine dataset?"* None that is public and labelled exists. Labelling local images is
   our first next step.
 - *"Why is CLAHE off?"* We measured it on validation and it lowered accuracy.
+- *"So can it detect potholes?"* Not reliably yet, because the public dataset labelled white lines as
+  potholes. We found that ourselves, and building our own hand-labelled pothole dataset is our next step.
 - *"How do you avoid alert spam?"* A 0.40 threshold, 2 of 3 frames, a 20-second cooldown and driver
   confirmation.
 
@@ -298,13 +323,13 @@ Thank you. We're happy to take your questions.
 
 ## Backup answers (kept out of the deck)
 
-Use these only if the panel asks directly. Never deny what the model does; answer briefly and truthfully.
+Use these only if the panel asks directly. Answer briefly and truthfully.
 
-- *"Does it detect potholes?"* "Not in this version. The public dataset mirror we used had a labelling
-  problem in its pothole class, mostly faded lane paint, which we found in our own audit. So we kept
-  the app to cracks, which we can show work, and retraining with correct pothole labels is our next
-  step." Evidence: `ml/reports/pothole_label_audit.md`.
-- *"Your model has two classes?"* "Yes, it was trained with two. The second class was trained on faulty
-  labels, so the app turns it off (`ANIROUTE_HAZARD_CLASSES`). Everything we report is the crack class."
+- *"Why does the app still show 'Pothole' boxes?"* "The pothole class is still in the model, but it was
+  trained on the white-line labels, so treat its boxes as unreliable. The water-filled pothole check is a
+  separate rule-based experiment; neither has a test score we can stand behind yet."
+- *"How will you collect your own pothole data?"* "Photograph potholes on local roads from a dashboard
+  phone, draw a box around each one in a labelling tool, have a second person check every box, then
+  retrain and evaluate on images the model never saw."
 - *"Why do overall mAP numbers elsewhere differ?"* "Older reports average both classes. The deck reports
-  the crack class only, because that is what the app uses."
+  the crack class, because the pothole labels were faulty." Evidence: `ml/reports/pothole_label_audit.md`.

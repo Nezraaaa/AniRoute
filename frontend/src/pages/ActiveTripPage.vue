@@ -20,7 +20,7 @@ import { useGeolocation } from '@/composables/useGeolocation'
 import { confirmHazard, scanCameraFrame, startHazardScanning, stopHazardScanning } from '@/services/hazards'
 import { recalculateRoute } from '@/services/routes'
 import { fetchSamples, hazardLabels } from '@/services/vision'
-import type { CameraScannerStatus, Coordinates, DetectedHazard, RouteCategory, SampleMedia, ScanFrameResult, VisionDetection } from '@/types/aniRoute'
+import type { CameraScannerStatus, Coordinates, DetectedHazard, HazardPin, RouteCategory, SampleMedia, ScanFrameResult, VisionDetection } from '@/types/aniRoute'
 
 type VideoSource = 'camera' | 'recording'
 
@@ -28,6 +28,8 @@ const router = useRouter()
 const store = useAniRouteStore()
 const camera = useCamera()
 const location = useGeolocation()
+// Hazards confirmed on this trip, pinned where they were confirmed.
+const confirmedPins = ref<HazardPin[]>([])
 const scannerStatus = ref<CameraScannerStatus | null>(null)
 const cameraStarting = ref(false)
 const dialogOpen = ref(false)
@@ -173,6 +175,13 @@ async function uploadFinding(evidenceFrameDataUrl?: string) {
   try {
     const upload = await confirmHazard(hazard, evidenceFrameDataUrl)
     if (upload.status !== 'uploaded') throw new Error(upload.message || 'Road update could not be saved.')
+    // Pin it on the map right away, where it was confirmed (the server only attaches hazards near a route).
+    if (hazard.coordinates) {
+      confirmedPins.value = [...confirmedPins.value, {
+        id: upload.id, name: hazard.label || hazardLabels[hazard.type], hazardType: hazard.type, coordinates: hazard.coordinates,
+        note: 'Confirmed by you · pinned at your GPS position',
+      }]
+    }
     store.state.uploadStatus = 'uploaded'
     store.state.uploadMessage = upload.message
     dismissedDetectionIds.add(hazard.id)
@@ -195,9 +204,13 @@ async function uploadFinding(evidenceFrameDataUrl?: string) {
       store.replaceRoutes(result.routes)
       store.state.routeSource = result.source
       store.state.newRecommendedRouteId = result.recommendedRouteId
-      successMessage.value = result.message || (result.changed
+      const nearRoute = result.routes.some(route => (route.knownHazards ?? []).some(pin => pin.id === upload.id))
+      const where = !hazard.coordinates
+        ? ' It has no GPS position, so it cannot be pinned on the map.'
+        : nearRoute ? ' It is pinned on the map.' : ' It is pinned on the map at your position.'
+      successMessage.value = (result.message || (result.changed
         ? `${successMessage.value} A different option is now recommended.`
-        : `${successMessage.value} The recommendation has been checked.`)
+        : `${successMessage.value} The recommendation has been checked.`)) + where
       store.state.routeMessage = result.message || ''
     } catch (error) {
       const recheckMessage = error instanceof Error
@@ -291,6 +304,7 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
           :origin-coordinates="store.state.originCoordinates"
           :destination-coordinates="store.state.destinationCoordinates"
           :delivery-point-coordinates="store.state.deliveryPointCoordinates"
+          :extra-hazards="confirmedPins"
           active
           @point-dragged="updateDraggedPoint"
         />
@@ -306,7 +320,15 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
           <span v-if="currentLocation" class="location-status location-good"><Crosshair :size="16" aria-hidden="true" /> Vehicle GPS is pinned</span>
           <span v-else-if="location.status.value === 'waiting'" class="location-status"><Crosshair :size="16" aria-hidden="true" /> Waiting for your location…</span>
           <span v-else class="location-status location-missing"><MapPin :size="16" aria-hidden="true" /> Location could not be pinned</span>
-          <span v-if="location.status.value === 'denied' || location.status.value === 'unavailable'" class="location-help">Hazards can be saved without a map pin, but only located hazards change route scores. No location is guessed.</span>
+          <template v-if="!currentLocation && location.status.value !== 'waiting'">
+            <span class="location-help">
+              <template v-if="location.status.value === 'denied'">Location is blocked for this site. Allow it in the browser's site settings (the lock icon next to the address), then tap Retry.</template>
+              <template v-else-if="location.status.value === 'insecure'">Browsers only share location on secure pages. Open the https:// address instead of http://.</template>
+              <template v-else>This device couldn't get a position. Laptops without GPS or Wi-Fi often can't; a phone works best. Check that location is on, then tap Retry.</template>
+              Hazards can still be saved without a pin, but only located hazards change route scores. No location is guessed.
+            </span>
+            <button v-if="location.status.value !== 'insecure'" type="button" class="location-retry" @click="location.retry()">Retry location</button>
+          </template>
         </div>
       </div>
 
@@ -398,7 +420,8 @@ onBeforeUnmount(() => stopAnalysis(store.state.activeRouteId))
         <Card class="road-condition-card">
           <CardContent class="road-condition-content">
             <Truck :size="19" aria-hidden="true" />
-            <div><span class="detail-label">Road</span><strong>{{ route.roadConditionSummary }}</strong></div>
+            <div><span class="detail-label">Road</span><strong>{{ route.roadConditionSummary }}</strong>
+              <p v-if="confirmedPins.length" class="road-confirmed-note">{{ confirmedPins.length }} hazard{{ confirmedPins.length === 1 ? '' : 's' }} confirmed on this trip, pinned on the map.</p></div>
           </CardContent>
         </Card>
       </aside>

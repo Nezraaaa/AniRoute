@@ -99,7 +99,7 @@ class HazardConfirmation(BaseModel):
     road_segment_id: str = Field(min_length=1, max_length=100)
     distance_ahead_km: float | None = Field(default=None, ge=0, le=100)
     simulated: bool = False
-    model: Literal["A", "B"] | None = None
+    model: Literal["A", "B", "CV"] | None = None   # CV = the OpenCV water-filled-pothole check
     source_label: str | None = Field(default=None, max_length=60)
     evidence_frame_data_url: str | None = Field(default=None, max_length=1_500_000)
 
